@@ -1,0 +1,36 @@
+Date,Contact Reason,Order #,Gorgias Link,Carrier,Destination State,Fulfillment Center Tag,Issue Type,Resolution,Further Details
+2026-07-02T00:00:00,,#57116,,FedEx,North Carolina,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-02T00:00:00,,#57250,,UPS,Oklahoma,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-02T00:00:00,,#57583,,LaserShip,Tennessee,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-03T00:00:00,,#56760,,LaserShip,Kentucky,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-03T00:00:00,,#56926,,LaserShip,Texas,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-04T00:00:00,,#57499,,UPS,Mississippi,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-06T00:00:00,,#56645,,UPS,Mississippi,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-06T00:00:00,,#57178,,LaserShip,California,GRIPCA,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-10T00:00:00,,#59424,,FedEx,District of Columbia,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-11T00:00:00,,58465.0,https://appyhour.gorgias.com/app/views/238613/212946833,UPS,South Carolina,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-11T00:00:00,,59475.0,https://appyhour.gorgias.com/app/views/238612/212925982,UPS,Connecticut,COG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-11T00:00:00,,58890.0,https://appyhour.gorgias.com/app/views/238613/212929082,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-11T00:00:00,,#59158,https://appyhour.gorgias.com/app/views/238613/213092346,FedEx,Pennsylvania,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-17T00:00:00,,59885.0,https://appyhour.gorgias.com/app/views/238623/214235318,UPS,Maryland,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-16T00:00:00,,60331.0,https://appyhour.gorgias.com/app/views/238612/214125338,UPS,New Jersey,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,60586.0,https://appyhour.gorgias.com/app/ticket/214240817,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,59623.0,https://appyhour.gorgias.com/app/ticket/214265279,UPS,New Jersey,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,59258.0,https://appyhour.gorgias.com/app/ticket/214267491,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,58225.0,https://appyhour.gorgias.com/app/ticket/214269695,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,59540.0,https://appyhour.gorgias.com/app/ticket/214292536,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,59627.0,https://appyhour.gorgias.com/app/ticket/214274170,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Refund Order::Amount $40+
+2026-07-17T00:00:00,,55246.0,https://appyhour.gorgias.com/app/ticket/214294573,UPS,New York,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-17T00:00:00,,59772.0,https://appyhour.gorgias.com/app/ticket/214295694,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-18T00:00:00,,60372.0,https://appyhour.gorgias.com/app/views/238613/214335382,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-18T00:00:00,,60377.0,https://appyhour.gorgias.com/app/views/238613/214403743,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-07-19T00:00:00,,60589.0,https://appyhour.gorgias.com/app/views/238613/214635503,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-20T00:00:00,,60302.0,https://appyhour.gorgias.com/app/views/238613/214695006,UPS,Virginia,COG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-25T00:00:00,,61718.0,https://appyhour.gorgias.com/app/views/238612/215232836,UPS,Georgia,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-31T00:00:00,,62639.0,https://appyhour.gorgias.com/app/views/238612/216676824,FedEx,Ohio,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-31T00:00:00,,62653.0,https://appyhour.gorgias.com/app/views/238619/217123484,UPS,Pennsylvania,COG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-07-31T00:00:00,,62517.0,https://appyhour.gorgias.com/app/views/238619/217139299,UPS,New Jersey,COG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-08-07T00:00:00,,63169.0,https://appyhour.gorgias.com/app/views/238613/218265694,UPS,Georgia,RMFG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-08-07T00:00:00,,63811.0,https://appyhour.gorgias.com/app/views/238613/218354284,UPS,Arizona,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship
+2026-08-09T00:00:00,,64574.0,https://appyhour.gorgias.com/app/views/238614/218833705,UPS,Iowa,RMFG,Shipping::Damaged in transit::Arrived Warm,Partial Reship
+2026-08-09T00:00:00,,64242.0,https://appyhour.gorgias.com/app/views/238614/218763209,FedEx,California,RMFG,Shipping::Damaged in transit::Arrived Warm,Full Reship

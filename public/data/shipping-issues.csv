@@ -1,0 +1,55 @@
+Date,Contact Reason,Order #,Gorgias Link,Carrier,Destination State,Fulfillment Center Tag,Issue Type,Resolution
+2026-07-01T00:00:00,,#55395,,LaserShip,Georgia,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-02T00:00:00,,#56086,,UPS,Texas,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-02T00:00:00,,#55704,,FedEx,New York,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-02T00:00:00,,#55209,,UPS,Arizona,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-02T00:00:00,,#57486,,UPS,Colorado,RMFG,Shipping::Damaged in transit::Full box damaged,Full Reship
+2026-07-02T00:00:00,,#57917,,FedEx,California,COG,Shipping::Damaged in transit::Damaged cheese,Credit Next Box::Amount $20
+2026-07-03T00:00:00,,#56612,,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-03T00:00:00,,#56853,,LaserShip,Kentucky,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-03T00:00:00,,#55888,,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-04T00:00:00,,#55507,,FedEx,Wisconsin,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-05T00:00:00,,#56953,,LaserShip,Georgia,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-05T00:00:00,,#58124,,UPS,Pennsylvania,COG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-09T00:00:00,,#57177,,UPS,Nebraska,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-09T00:00:00,,#57354,,FedEx,Michigan,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-09T00:00:00,,#57633,,FedEx,Minnesota,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-11T00:00:00,,#58633,https://appyhour.gorgias.com/app/views/238613/212939831,UPS,Tennessee,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-11T00:00:00,,58714.0,https://appyhour.gorgias.com/app/views/238613/212956029,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-11T00:00:00,,57823.0,https://appyhour.gorgias.com/app/views/238613/212941213,LaserShip,Texas,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-11T00:00:00,,58693.0,https://appyhour.gorgias.com/app/views/238613/212979936,FedEx,South Dakota,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-11T00:00:00,,58226.0,https://appyhour.gorgias.com/app/views/238612/212933780,UPS,New Jersey,COG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-11T00:00:00,,57769.0,https://appyhour.gorgias.com/app/views/238612/212593660,FedEx,Ohio,COG,Shipping::Lost in Transit/Misdelivered,Partial Reship
+2026-07-11T00:00:00,,58987.0,https://appyhour.gorgias.com/app/views/238613/213038050,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-12T00:00:00,,57145.0,https://appyhour.gorgias.com/app/views/238614/212748612,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-12T00:00:00,,58518.0,https://appyhour.gorgias.com/app/views/238614/213219928,FedEx,Missouri,RMFG,Shipping::Damaged in transit::Spilled accompaniment or Broken Crackers or Broken/Leaking Jar,Comp Item::Extra Accompaniment(s)
+2026-07-13T00:00:00,,59338.0,https://appyhour.gorgias.com/app/views/238614/213134286,FedEx,Wisconsin,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-13T00:00:00,,59034.0,https://appyhour.gorgias.com/app/ticket/213389252,UPS,Pennsylvania,COG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-15T00:00:00,,59342.0,https://appyhour.gorgias.com/app/views/238614/213792627,LaserShip,Georgia,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-15T00:00:00,,58229.0,https://appyhour.gorgias.com/app/views/238614/213807566,UPS,Pennsylvania,COG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-16T00:00:00,,60086.0,https://appyhour.gorgias.com/app/views/238612/214117914,FedEx,Indiana,RMFG,Shipping::Damaged in transit::Damaged cheese,Comp Item + Credit/Refund::$10 off + extra cheese
+2026-07-16T00:00:00,,60106.0,https://appyhour.gorgias.com/app/views/238623/214132840,UPS,Mississippi,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-17T00:00:00,,59860.0,https://appyhour.gorgias.com/app/views/238613/214196093,UPS,South Carolina,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-18T00:00:00,,59828.0,https://appyhour.gorgias.com/app/views/238613/214344260,UPS,Colorado,RMFG,Shipping::Delayed in transit::3 Days in Transit,Partial Reship
+2026-07-18T00:00:00,,58818.0,https://appyhour.gorgias.com/app/ticket/213997542,UPS,Mississippi,RMFG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-18T00:00:00,,59733.0,https://appyhour.gorgias.com/app/ticket/214328955,LaserShip,California,GRIPCA,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-18T00:00:00,,59810.0,https://appyhour.gorgias.com/app/views/238613/214454443,UPS,South Carolina,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-18T00:00:00,,60156.0,https://appyhour.gorgias.com/app/views/238614/214461788,UPS,Maryland,COG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-19T00:00:00,,60188.0,https://appyhour.gorgias.com/app/views/238613/214571728,LaserShip,Washington,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-19T00:00:00,,60566.0,https://appyhour.gorgias.com/app/views/238613/214610495,FedEx,West Virginia,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-19T00:00:00,,60576.0,https://appyhour.gorgias.com/app/views/238614/214646497,FedEx,North Carolina,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-19T00:00:00,,60562.0,https://appyhour.gorgias.com/app/views/238613/214642812,FedEx,Illinois,RMFG,Shipping::Delayed in transit::3 Days in Transit,Refund Order::Amount $40+
+2026-07-20T00:00:00,,60251.0,https://appyhour.gorgias.com/app/views/238613/214684059,LaserShip,Washington,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-20T00:00:00,,60241.0,https://appyhour.gorgias.com/app/views/238614/214319572,FedEx,Utah,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-22T00:00:00,,58706.0,https://appyhour.gorgias.com/app/views/238613/215012902,LaserShip,California,GRIPCA,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-22T00:00:00,,57824.0,https://appyhour.gorgias.com/app/views/238613/215174937,UPS,Maryland,COG,Shipping::Lost in Transit/Misdelivered,Full Reship
+2026-07-24T00:00:00,,60709.0,https://appyhour.gorgias.com/app/views/238613/215704330,UPS,Alabama,RMFG,Shipping::Delayed in transit::3 Days in Transit,Full Reship
+2026-07-25T00:00:00,,60661.0,https://appyhour.gorgias.com/app/views/238613/215800317,FedEx,North Carolina,RMFG,Shipping::Damaged in transit::Full box damaged,Full Reship
+2026-07-25T00:00:00,,61901.0,https://appyhour.gorgias.com/app/ticket/215822127,FedEx,North Carolina,RMFG,Shipping::Damaged in transit::Damaged cheese,Credit Next Box::Amount $10
+2026-07-25T00:00:00,,61613.0,https://appyhour.gorgias.com/app/views/238613/215903658,UPS,Colorado,RMFG,Shipping::Delayed in transit::4+ Days in Transit,Full Reship
+2026-07-25T00:00:00,,62060.0,https://appyhour.gorgias.com/app/views/238613/215871118,FedEx,California,RMFG,Shipping::Damaged in transit::Spilled accompaniment or Broken Crackers or Broken/Leaking Jar,Full Reship
+2026-07-28T00:00:00,,61022.0,https://appyhour.gorgias.com/app/views/238612/216248492,FedEx,North Carolina,RMFG,Shipping::Damaged in transit::Full box damaged,Refund Order::Amount $40+
+2026-07-29T00:00:00,,62403.0,https://appyhour.gorgias.com/app/ticket/216559372,FedEx,Illinois,RMFG,Shipping::Damaged in transit::Spilled accompaniment or Broken Crackers or Broken/Leaking Jar,Credit Next Box::Amount $10
+2026-07-29T00:00:00,,56474.0,https://appyhour.gorgias.com/app/ticket/216489035,UPS,Pennsylvania,COG,Shipping::cannot be delivered,Full Reship
+2026-07-30T00:00:00,,62879.0,https://appyhour.gorgias.com/app/views/238613/216855427,UPS,Connecticut,COG,Shipping::Damaged in transit::Spilled accompaniment,Credit Next Box::Amount $6
+2026-08-06T00:00:00,,63085.0,https://appyhour.gorgias.com/app/views/238613/218239516,UPS,Montana,RMFG,Shipping::Damaged in transit::Broken/Leaking Ice Pack,Full Reship
