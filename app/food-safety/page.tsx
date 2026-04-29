@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { fetchFoodSafety } from "@/lib/data";
 import { applyFoodSafetyFilters } from "@/lib/filters";
 import {
@@ -8,7 +8,6 @@ import {
   skuPareto,
   concernBreakdown,
   weeklyComplaintTrend,
-  skuTrendOverTime,
   monthlyComplaintTrend,
   dailyComplaintTrend,
 } from "@/lib/transforms";
@@ -20,7 +19,6 @@ import WeeklyTrend from "@/components/charts/WeeklyTrend";
 import DonutChart from "@/components/charts/DonutChart";
 
 type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly";
-type ViewMode = "overview" | "sku-trend" | "concern-analysis";
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 interface StatProps {
@@ -67,44 +65,25 @@ function Card({
   sub,
   children,
   className = "",
+  headerRight,
 }: {
   title: string;
   sub?: string;
   children: React.ReactNode;
   className?: string;
+  headerRight?: React.ReactNode;
 }) {
   return (
     <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+          {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        </div>
+        {headerRight && <div className="flex-shrink-0">{headerRight}</div>}
       </div>
       {children}
     </div>
-  );
-}
-
-// ── View selector chips ──────────────────────────────────────────────────────
-function ViewChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-        active
-          ? "bg-blue-600 text-white border-blue-600"
-          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -128,7 +107,7 @@ function PeriodSelector({
         <button
           key={p.key}
           onClick={() => onChange(p.key)}
-          className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
             value === p.key
               ? "bg-white text-slate-900 shadow-sm"
               : "text-slate-500 hover:text-slate-700"
@@ -137,83 +116,6 @@ function PeriodSelector({
           {p.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-// ── SKU Trend Table ──────────────────────────────────────────────────────────
-function SkuTrendTable({
-  data,
-}: {
-  data: { sku: string; periods: { period: string; count: number }[] }[];
-}) {
-  if (data.length === 0) {
-    return (
-      <div className="text-center text-slate-400 py-8 text-sm">
-        No SKU data available
-      </div>
-    );
-  }
-
-  // Get all unique periods for headers
-  const allPeriods = data[0]?.periods.map((p) => p.period) ?? [];
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>
-            <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase sticky left-0 bg-slate-50">
-              SKU
-            </th>
-            <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase">
-              Total
-            </th>
-            {allPeriods.map((period) => (
-              <th
-                key={period}
-                className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase"
-              >
-                {period}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {data.map((row) => {
-            const total = row.periods.reduce((s, p) => s + p.count, 0);
-            return (
-              <tr key={row.sku} className="hover:bg-slate-50/60">
-                <td className="px-3 py-2 text-xs text-slate-800 font-medium sticky left-0 bg-white max-w-[150px] truncate">
-                  {row.sku}
-                </td>
-                <td className="px-3 py-2 text-xs font-semibold text-slate-700">
-                  {total}
-                </td>
-                {row.periods.map((p) => (
-                  <td key={p.period} className="px-2 py-2 text-center text-xs">
-                    {p.count > 0 ? (
-                      <span
-                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-medium ${
-                          p.count >= 3
-                            ? "bg-red-100 text-red-700"
-                            : p.count >= 2
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {p.count}
-                      </span>
-                    ) : (
-                      <span className="text-slate-200">-</span>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -418,8 +320,7 @@ export default function FoodSafetyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("overview");
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>("monthly");
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("weekly");
   const filters = useFilterStore();
 
   useEffect(() => {
@@ -444,7 +345,7 @@ export default function FoodSafetyPage() {
   const sku = useMemo(() => skuPareto(tickets, 10), [tickets]);
   const concerns = useMemo(() => concernBreakdown(tickets), [tickets]);
 
-  // Time-based trends
+  // Time-based trends for the chart
   const trendData = useMemo(() => {
     switch (timePeriod) {
       case "daily":
@@ -452,16 +353,12 @@ export default function FoodSafetyPage() {
       case "weekly":
         return weeklyComplaintTrend(tickets);
       case "monthly":
-        return monthlyComplaintTrend(tickets);
       case "quarterly":
-        return monthlyComplaintTrend(tickets); // Fall back to monthly for now
-      default:
         return monthlyComplaintTrend(tickets);
+      default:
+        return weeklyComplaintTrend(tickets);
     }
   }, [tickets, timePeriod]);
-
-  // SKU trend data
-  const skuTrend = useMemo(() => skuTrendOverTime(tickets, timePeriod), [tickets, timePeriod]);
 
   if (loading)
     return (
@@ -506,21 +403,6 @@ export default function FoodSafetyPage() {
           </div>
         </div>
 
-        {/* View mode selector */}
-        <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-lg p-3">
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">View</span>
-          <ViewChip label="Overview" active={viewMode === "overview"} onClick={() => setViewMode("overview")} />
-          <ViewChip label="SKU Trend" active={viewMode === "sku-trend"} onClick={() => setViewMode("sku-trend")} />
-          <ViewChip
-            label="Concern Analysis"
-            active={viewMode === "concern-analysis"}
-            onClick={() => setViewMode("concern-analysis")}
-          />
-          <div className="h-4 w-px bg-slate-200 mx-2" />
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Period</span>
-          <PeriodSelector value={timePeriod} onChange={setTimePeriod} />
-        </div>
-
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard
@@ -556,64 +438,25 @@ export default function FoodSafetyPage() {
           <StatCard label="Top Concern" value={kpis.mostCommonConcern} sub="most frequent" accent="neutral" />
         </div>
 
-        {/* View-specific content */}
-        {viewMode === "overview" && (
-          <>
-            {/* Trend + concern */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              <Card
-                title="Complaints & Cost Over Time"
-                sub={`${timePeriod.charAt(0).toUpperCase() + timePeriod.slice(1)} view · bars = count, dashed line = cost`}
-                className="lg:col-span-3"
-              >
-                <WeeklyTrend data={trendData} />
-              </Card>
-              <Card title="Concern Breakdown" className="lg:col-span-2">
-                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-              </Card>
-            </div>
+        {/* Trend + concern breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          <Card
+            title="Complaints & Cost Over Time"
+            sub="Bars = count, dashed line = cost"
+            className="lg:col-span-3"
+            headerRight={<PeriodSelector value={timePeriod} onChange={setTimePeriod} />}
+          >
+            <WeeklyTrend data={trendData} />
+          </Card>
+          <Card title="Concern Breakdown" sub="By complaint count" className="lg:col-span-2">
+            <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+          </Card>
+        </div>
 
-            {/* SKU pareto */}
-            <Card title="Top 10 SKUs by Complaint Count" sub="SKU or product name as entered">
-              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-            </Card>
-          </>
-        )}
-
-        {viewMode === "sku-trend" && (
-          <>
-            <Card
-              title="SKU Complaints Over Time"
-              sub={`Showing top SKUs by complaint count · ${timePeriod} view`}
-            >
-              <SkuTrendTable data={skuTrend} />
-            </Card>
-
-            <Card title="Top 10 SKUs Overall" sub="Ranking by total complaint count">
-              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-            </Card>
-          </>
-        )}
-
-        {viewMode === "concern-analysis" && (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card title="Concern Breakdown" sub="By complaint count">
-                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-              </Card>
-              <Card title="Concern Cost Impact" sub="Total resolution cost by concern type">
-                <HorizontalBar
-                  data={concerns.map((c) => ({
-                    label: c.concern,
-                    value: Math.round(c.count * kpis.avgCost),
-                  }))}
-                  color="#8b5cf6"
-                  formatter={(v) => `$${v.toLocaleString()}`}
-                />
-              </Card>
-            </div>
-          </>
-        )}
+        {/* SKU pareto - always shown */}
+        <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
+          <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+        </Card>
 
         {/* Ticket table */}
         <Card title="Complaint Log" sub="Click a Shopify order number to open the Gorgias ticket">
