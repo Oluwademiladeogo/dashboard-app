@@ -19,6 +19,7 @@ import WeeklyTrend from "@/components/charts/WeeklyTrend";
 import DonutChart from "@/components/charts/DonutChart";
 
 type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly";
+type ViewMode = "overview" | "concern-analysis";
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 interface StatProps {
@@ -84,6 +85,30 @@ function Card({
       </div>
       {children}
     </div>
+  );
+}
+
+// ── View selector chips ──────────────────────────────────────────────────────
+function ViewChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+        active
+          ? "bg-blue-600 text-white border-blue-600"
+          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -320,6 +345,7 @@ export default function FoodSafetyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("weekly");
   const filters = useFilterStore();
 
@@ -403,6 +429,17 @@ export default function FoodSafetyPage() {
           </div>
         </div>
 
+        {/* View mode selector */}
+        <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-lg p-3">
+          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">View</span>
+          <ViewChip label="Overview" active={viewMode === "overview"} onClick={() => setViewMode("overview")} />
+          <ViewChip
+            label="Concern Analysis"
+            active={viewMode === "concern-analysis"}
+            onClick={() => setViewMode("concern-analysis")}
+          />
+        </div>
+
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard
@@ -438,25 +475,51 @@ export default function FoodSafetyPage() {
           <StatCard label="Top Concern" value={kpis.mostCommonConcern} sub="most frequent" accent="neutral" />
         </div>
 
-        {/* Trend + concern breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <Card
-            title="Complaints & Cost Over Time"
-            sub="Bars = count, dashed line = cost"
-            className="lg:col-span-3"
-            headerRight={<PeriodSelector value={timePeriod} onChange={setTimePeriod} />}
-          >
-            <WeeklyTrend data={trendData} />
-          </Card>
-          <Card title="Concern Breakdown" sub="By complaint count" className="lg:col-span-2">
-            <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-          </Card>
-        </div>
-
-        {/* SKU pareto - always shown */}
-        <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
-          <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+        {/* Full-width trend chart with period selector */}
+        <Card
+          title="Complaints & Cost Over Time"
+          sub="Bars = count, dashed line = cost"
+          headerRight={<PeriodSelector value={timePeriod} onChange={setTimePeriod} />}
+        >
+          <WeeklyTrend data={trendData} />
         </Card>
+
+        {/* Side-by-side: Concern Breakdown and Top 10 SKUs */}
+        {viewMode === "overview" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title="Concern Breakdown" sub="By complaint count">
+              <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+            </Card>
+            <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
+              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+            </Card>
+          </div>
+        )}
+
+        {/* Concern Analysis view */}
+        {viewMode === "concern-analysis" && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card title="Concern Breakdown" sub="By complaint count">
+                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+              </Card>
+              <Card title="Concern Cost Impact" sub="Estimated total resolution cost by concern type">
+                <HorizontalBar
+                  data={concerns.map((c) => ({
+                    label: c.concern,
+                    value: Math.round(c.count * kpis.avgCost),
+                  }))}
+                  color="#8b5cf6"
+                  formatter={(v) => `$${v.toLocaleString()}`}
+                />
+              </Card>
+            </div>
+
+            <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
+              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+            </Card>
+          </>
+        )}
 
         {/* Ticket table */}
         <Card title="Complaint Log" sub="Click a Shopify order number to open the Gorgias ticket">
