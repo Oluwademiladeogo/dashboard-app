@@ -157,6 +157,110 @@ export function weeklyComplaintTrend(
     .map(([week, { count, cost }]) => ({ week, count, cost }));
 }
 
+// ── Daily trend ───────────────────────────────────────────────────────────────
+export function dailyComplaintTrend(
+  tickets: FoodSafetyTicket[]
+): { week: string; count: number; cost: number }[] {
+  const days: Record<string, { count: number; cost: number }> = {};
+  for (const t of tickets) {
+    if (!t.dateOfComplaint) continue;
+    const key = t.dateOfComplaint.toISOString().slice(0, 10);
+    if (!days[key]) days[key] = { count: 0, cost: 0 };
+    days[key].count += 1;
+    days[key].cost += t.resolutionCost;
+  }
+  return Object.entries(days)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, { count, cost }]) => ({ week, count, cost }));
+}
+
+// ── Monthly trend ────────────────────────────────────────────────────────────
+export function monthlyComplaintTrend(
+  tickets: FoodSafetyTicket[]
+): { week: string; count: number; cost: number }[] {
+  const months: Record<string, { count: number; cost: number }> = {};
+  for (const t of tickets) {
+    if (!t.dateOfComplaint) continue;
+    const key = t.dateOfComplaint.toISOString().slice(0, 7); // YYYY-MM
+    if (!months[key]) months[key] = { count: 0, cost: 0 };
+    months[key].count += 1;
+    months[key].cost += t.resolutionCost;
+  }
+  return Object.entries(months)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, { count, cost }]) => ({ week, count, cost }));
+}
+
+// ── SKU trend over time ───────────────────────────────────────────────────────
+export function skuTrendOverTime(
+  tickets: FoodSafetyTicket[],
+  period: "daily" | "weekly" | "monthly" | "quarterly"
+): { sku: string; periods: { period: string; count: number }[] }[] {
+  // Get period key function
+  const getPeriodKey = (d: Date): string => {
+    switch (period) {
+      case "daily":
+        return d.toISOString().slice(0, 10);
+      case "weekly": {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d);
+        monday.setDate(diff);
+        return monday.toISOString().slice(0, 10);
+      }
+      case "monthly":
+        return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+      case "quarterly": {
+        const q = Math.floor(d.getMonth() / 3) + 1;
+        return `Q${q} ${d.getFullYear()}`;
+      }
+      default:
+        return d.toISOString().slice(0, 10);
+    }
+  };
+
+  // Get all unique periods
+  const allPeriodsSet = new Set<string>();
+  for (const t of tickets) {
+    if (t.dateOfComplaint) allPeriodsSet.add(getPeriodKey(t.dateOfComplaint));
+  }
+  const allPeriods = Array.from(allPeriodsSet).sort();
+
+  // Get top 15 SKUs by complaint count
+  const skuCounts: Record<string, number> = {};
+  for (const t of tickets) {
+    const sku = t.skuInQuestion ?? "Unknown";
+    skuCounts[sku] = (skuCounts[sku] ?? 0) + 1;
+  }
+  const topSkus = Object.entries(skuCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([sku]) => sku);
+
+  // Build trend data for top SKUs
+  const result: { sku: string; periods: { period: string; count: number }[] }[] = [];
+
+  for (const sku of topSkus) {
+    const periodCounts: Record<string, number> = {};
+    for (const t of tickets) {
+      if (t.skuInQuestion === sku && t.dateOfComplaint) {
+        const key = getPeriodKey(t.dateOfComplaint);
+        periodCounts[key] = (periodCounts[key] ?? 0) + 1;
+      }
+    }
+
+    result.push({
+      sku,
+      periods: allPeriods.map((p) => ({
+        period: p,
+        count: periodCounts[p] ?? 0,
+      })),
+    });
+  }
+
+  return result;
+}
+
 // ── FC breakdown ──────────────────────────────────────────────────────────────
 export function fcBreakdown(
   tickets: FoodSafetyTicket[]

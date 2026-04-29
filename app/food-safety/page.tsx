@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { fetchFoodSafety } from "@/lib/data";
 import { applyFoodSafetyFilters } from "@/lib/filters";
 import {
-  foodSafetyKpis, skuPareto, concernBreakdown, weeklyComplaintTrend,
+  foodSafetyKpis,
+  skuPareto,
+  concernBreakdown,
+  weeklyComplaintTrend,
+  skuTrendOverTime,
+  monthlyComplaintTrend,
+  dailyComplaintTrend,
 } from "@/lib/transforms";
 import { useFilterStore } from "@/lib/store";
 import type { FoodSafetyTicket } from "@/lib/types";
@@ -12,6 +18,9 @@ import FilterBar from "@/components/filters/FilterBar";
 import HorizontalBar from "@/components/charts/HorizontalBar";
 import WeeklyTrend from "@/components/charts/WeeklyTrend";
 import DonutChart from "@/components/charts/DonutChart";
+
+type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly";
+type ViewMode = "overview" | "sku-trend" | "concern-analysis";
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 interface StatProps {
@@ -22,33 +31,47 @@ interface StatProps {
 }
 
 const ACCENT_STYLES = {
-  blue:    "border-t-blue-500 bg-blue-50/40",
-  green:   "border-t-emerald-500 bg-emerald-50/40",
-  amber:   "border-t-amber-500 bg-amber-50/40",
-  red:     "border-t-red-500 bg-red-50/40",
+  blue: "border-t-blue-500 bg-blue-50/40",
+  green: "border-t-emerald-500 bg-emerald-50/40",
+  amber: "border-t-amber-500 bg-amber-50/40",
+  red: "border-t-red-500 bg-red-50/40",
   neutral: "border-t-slate-300 bg-white",
 };
 const VALUE_STYLES = {
-  blue:    "text-blue-700",
-  green:   "text-emerald-700",
-  amber:   "text-amber-700",
-  red:     "text-red-700",
+  blue: "text-blue-700",
+  green: "text-emerald-700",
+  amber: "text-amber-700",
+  red: "text-red-700",
   neutral: "text-slate-900",
 };
 
 function StatCard({ label, value, sub, accent = "neutral" }: StatProps) {
   return (
-    <div className={`rounded-lg border border-slate-200 border-t-2 p-4 ${ACCENT_STYLES[accent]}`}>
-      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">{label}</p>
-      <p className={`text-2xl font-bold leading-none ${VALUE_STYLES[accent]}`}>{value}</p>
+    <div
+      className={`rounded-lg border border-slate-200 border-t-2 p-4 ${ACCENT_STYLES[accent]}`}
+    >
+      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+        {label}
+      </p>
+      <p className={`text-2xl font-bold leading-none ${VALUE_STYLES[accent]}`}>
+        {value}
+      </p>
       {sub && <p className="text-xs text-slate-400 mt-1.5">{sub}</p>}
     </div>
   );
 }
 
 // ── Card wrapper ──────────────────────────────────────────────────────────────
-function Card({ title, sub, children, className = "" }: {
-  title: string; sub?: string; children: React.ReactNode; className?: string;
+function Card({
+  title,
+  sub,
+  children,
+  className = "",
+}: {
+  title: string;
+  sub?: string;
+  children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
@@ -57,6 +80,140 @@ function Card({ title, sub, children, className = "" }: {
         {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ── View selector chips ──────────────────────────────────────────────────────
+function ViewChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+        active
+          ? "bg-blue-600 text-white border-blue-600"
+          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ── Time period selector ─────────────────────────────────────────────────────
+function PeriodSelector({
+  value,
+  onChange,
+}: {
+  value: TimePeriod;
+  onChange: (p: TimePeriod) => void;
+}) {
+  const periods: { key: TimePeriod; label: string }[] = [
+    { key: "daily", label: "Daily" },
+    { key: "weekly", label: "Weekly" },
+    { key: "monthly", label: "Monthly" },
+    { key: "quarterly", label: "Quarterly" },
+  ];
+  return (
+    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+      {periods.map((p) => (
+        <button
+          key={p.key}
+          onClick={() => onChange(p.key)}
+          className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            value === p.key
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── SKU Trend Table ──────────────────────────────────────────────────────────
+function SkuTrendTable({
+  data,
+}: {
+  data: { sku: string; periods: { period: string; count: number }[] }[];
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="text-center text-slate-400 py-8 text-sm">
+        No SKU data available
+      </div>
+    );
+  }
+
+  // Get all unique periods for headers
+  const allPeriods = data[0]?.periods.map((p) => p.period) ?? [];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase sticky left-0 bg-slate-50">
+              SKU
+            </th>
+            <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase">
+              Total
+            </th>
+            {allPeriods.map((period) => (
+              <th
+                key={period}
+                className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase"
+              >
+                {period}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {data.map((row) => {
+            const total = row.periods.reduce((s, p) => s + p.count, 0);
+            return (
+              <tr key={row.sku} className="hover:bg-slate-50/60">
+                <td className="px-3 py-2 text-xs text-slate-800 font-medium sticky left-0 bg-white max-w-[150px] truncate">
+                  {row.sku}
+                </td>
+                <td className="px-3 py-2 text-xs font-semibold text-slate-700">
+                  {total}
+                </td>
+                {row.periods.map((p) => (
+                  <td key={p.period} className="px-2 py-2 text-center text-xs">
+                    {p.count > 0 ? (
+                      <span
+                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-medium ${
+                          p.count >= 3
+                            ? "bg-red-100 text-red-700"
+                            : p.count >= 2
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {p.count}
+                      </span>
+                    ) : (
+                      <span className="text-slate-200">-</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -82,20 +239,26 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      const av = a[sortField], bv = b[sortField];
+      const av = a[sortField],
+        bv = b[sortField];
       if (av == null) return 1;
       if (bv == null) return -1;
       if (av instanceof Date && bv instanceof Date)
         return sortAsc ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
       if (typeof av === "number" && typeof bv === "number")
         return sortAsc ? av - bv : bv - av;
-      return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+      return sortAsc
+        ? String(av).localeCompare(String(bv))
+        : String(bv).localeCompare(String(av));
     });
   }, [filtered, sortField, sortAsc]);
 
   function handleSort(field: keyof FoodSafetyTicket) {
     if (sortField === field) setSortAsc((v) => !v);
-    else { setSortField(field); setSortAsc(false); }
+    else {
+      setSortField(field);
+      setSortAsc(false);
+    }
   }
 
   function fmtDate(d: Date | null) {
@@ -103,12 +266,21 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
   }
 
-  const Th = ({ label, field, w }: { label: string; field: keyof FoodSafetyTicket; w?: string }) => (
+  const Th = ({
+    label,
+    field,
+    w,
+  }: {
+    label: string;
+    field: keyof FoodSafetyTicket;
+    w?: string;
+  }) => (
     <th
       onClick={() => handleSort(field)}
       className={`px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider cursor-pointer whitespace-nowrap select-none hover:text-slate-800 transition-colors ${w ?? ""}`}
     >
-      {label}{sortField === field && <span className="ml-1 text-blue-500">{sortAsc ? "↑" : "↓"}</span>}
+      {label}
+      {sortField === field && <span className="ml-1 text-blue-500">{sortAsc ? "↑" : "↓"}</span>}
     </th>
   );
 
@@ -116,7 +288,19 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     <div className="space-y-3">
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <svg
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
           <input
             type="text"
             placeholder="Search by order #, customer, SKU, concern…"
@@ -128,9 +312,9 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
         <span className="text-xs text-slate-400 shrink-0">{sorted.length} records</span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[600px] overflow-y-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
               <Th label="Shopify #" field="shopifyOrderNumber" w="w-24" />
               <Th label="Date" field="dateOfComplaint" w="w-24" />
@@ -155,28 +339,67 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
               <tr key={i} className="hover:bg-slate-50/60 transition-colors group">
                 <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
                   {t.gorgiasLink ? (
-                    <a href={t.gorgiasLink} target="_blank" rel="noreferrer"
-                      className="text-blue-600 hover:text-blue-800 hover:underline">
-                      {t.shopifyOrderNumber ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}` : "—"}
+                    <a
+                      href={t.gorgiasLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {t.shopifyOrderNumber
+                        ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
+                        : "—"}
                     </a>
                   ) : (
-                    t.shopifyOrderNumber ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}` : "—"
+                    t.shopifyOrderNumber
+                      ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
+                      : "—"
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">{fmtDate(t.dateOfComplaint)}</td>
-                <td className="px-3 py-2 text-xs text-slate-800 max-w-[130px] truncate font-medium">{t.customerName ?? "—"}</td>
-                <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[130px] truncate" title={t.skuInQuestion ?? ""}>{t.skuInQuestion ?? "—"}</td>
-                <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{t.packagingType ?? "—"}</td>
-                <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[200px] truncate" title={t.perceivedConcern ?? ""}>{t.perceivedConcern ?? "—"}</td>
-                <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[180px] truncate" title={t.correctiveAction ?? ""}>{t.correctiveAction ?? "—"}</td>
+                <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">
+                  {fmtDate(t.dateOfComplaint)}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-800 max-w-[130px] truncate font-medium">
+                  {t.customerName ?? "—"}
+                </td>
+                <td
+                  className="px-3 py-2 text-[11px] text-slate-600 max-w-[130px] truncate"
+                  title={t.skuInQuestion ?? ""}
+                >
+                  {t.skuInQuestion ?? "—"}
+                </td>
+                <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">
+                  {t.packagingType ?? "—"}
+                </td>
+                <td
+                  className="px-3 py-2 text-[11px] text-slate-600 max-w-[200px] truncate"
+                  title={t.perceivedConcern ?? ""}
+                >
+                  {t.perceivedConcern ?? "—"}
+                </td>
+                <td
+                  className="px-3 py-2 text-[11px] text-slate-600 max-w-[180px] truncate"
+                  title={t.correctiveAction ?? ""}
+                >
+                  {t.correctiveAction ?? "—"}
+                </td>
                 <td className="px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap">
-                  {t.resolutionCost > 0 ? `$${t.resolutionCost.toFixed(0)}` : <span className="text-slate-300">—</span>}
+                  {t.resolutionCost > 0 ? (
+                    `$${t.resolutionCost.toFixed(0)}`
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
                 </td>
                 <td className="px-3 py-2">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                    t.isResolved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${t.isResolved ? "bg-emerald-500" : "bg-amber-400"}`} />
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      t.isResolved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        t.isResolved ? "bg-emerald-500" : "bg-amber-400"
+                      }`}
+                    />
                     {t.isResolved ? "Resolved" : "Open"}
                   </span>
                 </td>
@@ -195,6 +418,8 @@ export default function FoodSafetyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("overview");
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("monthly");
   const filters = useFilterStore();
 
   useEffect(() => {
@@ -218,41 +443,61 @@ export default function FoodSafetyPage() {
   const kpis = useMemo(() => foodSafetyKpis(tickets), [tickets]);
   const sku = useMemo(() => skuPareto(tickets, 10), [tickets]);
   const concerns = useMemo(() => concernBreakdown(tickets), [tickets]);
-  const trend = useMemo(() => weeklyComplaintTrend(tickets), [tickets]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex items-center gap-2 text-slate-400 text-sm">
-        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-        Loading food safety data…
+  // Time-based trends
+  const trendData = useMemo(() => {
+    switch (timePeriod) {
+      case "daily":
+        return dailyComplaintTrend(tickets);
+      case "weekly":
+        return weeklyComplaintTrend(tickets);
+      case "monthly":
+        return monthlyComplaintTrend(tickets);
+      case "quarterly":
+        return monthlyComplaintTrend(tickets); // Fall back to monthly for now
+      default:
+        return monthlyComplaintTrend(tickets);
+    }
+  }, [tickets, timePeriod]);
+
+  // SKU trend data
+  const skuTrend = useMemo(() => skuTrendOverTime(tickets, timePeriod), [tickets, timePeriod]);
+
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          Loading food safety data…
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  if (error) return (
-    <div className="flex items-center justify-center h-64 text-red-500 text-sm">{error}</div>
-  );
+  if (error) return <div className="flex items-center justify-center h-64 text-red-500 text-sm">{error}</div>;
 
-  const resolvedPct = kpis.totalComplaints > 0
-    ? ((kpis.resolved / kpis.totalComplaints) * 100).toFixed(0)
-    : "0";
+  const resolvedPct =
+    kpis.totalComplaints > 0 ? ((kpis.resolved / kpis.totalComplaints) * 100).toFixed(0) : "0";
 
   return (
     <div className="min-h-screen bg-slate-50">
       <FilterBar />
 
       <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
-
         {/* Page header */}
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Food Safety Complaints</h1>
             <p className="text-xs text-slate-400 mt-0.5">
               {allTickets.length} total records
-              {lastUpdated && ` · most recent complaint ${lastUpdated.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
+              {lastUpdated &&
+                ` · most recent complaint ${lastUpdated.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -261,30 +506,114 @@ export default function FoodSafetyPage() {
           </div>
         </div>
 
+        {/* View mode selector */}
+        <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-lg p-3">
+          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">View</span>
+          <ViewChip label="Overview" active={viewMode === "overview"} onClick={() => setViewMode("overview")} />
+          <ViewChip label="SKU Trend" active={viewMode === "sku-trend"} onClick={() => setViewMode("sku-trend")} />
+          <ViewChip
+            label="Concern Analysis"
+            active={viewMode === "concern-analysis"}
+            onClick={() => setViewMode("concern-analysis")}
+          />
+          <div className="h-4 w-px bg-slate-200 mx-2" />
+          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Period</span>
+          <PeriodSelector value={timePeriod} onChange={setTimePeriod} />
+        </div>
+
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="Complaints" value={kpis.totalComplaints.toString()} sub="in period" accent="blue" />
-          <StatCard label="Total Cost" value={`$${kpis.totalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}`} sub="resolution cost" accent="neutral" />
-          <StatCard label="Avg Cost" value={`$${kpis.avgCost.toFixed(0)}`} sub="per complaint" accent="neutral" />
-          <StatCard label="Resolved" value={kpis.resolved.toString()} sub={`${resolvedPct}% of total`} accent="green" />
-          <StatCard label="Open" value={kpis.unresolved.toString()} sub="awaiting action" accent={kpis.unresolved > 10 ? "amber" : "neutral"} />
+          <StatCard
+            label="Complaints"
+            value={kpis.totalComplaints.toString()}
+            sub="in period"
+            accent="blue"
+          />
+          <StatCard
+            label="Total Cost"
+            value={`$${kpis.totalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            sub="resolution cost"
+            accent="neutral"
+          />
+          <StatCard
+            label="Avg Cost"
+            value={`$${kpis.avgCost.toFixed(0)}`}
+            sub="per complaint"
+            accent="neutral"
+          />
+          <StatCard
+            label="Resolved"
+            value={kpis.resolved.toString()}
+            sub={`${resolvedPct}% of total`}
+            accent="green"
+          />
+          <StatCard
+            label="Open"
+            value={kpis.unresolved.toString()}
+            sub="awaiting action"
+            accent={kpis.unresolved > 10 ? "amber" : "neutral"}
+          />
           <StatCard label="Top Concern" value={kpis.mostCommonConcern} sub="most frequent" accent="neutral" />
         </div>
 
-        {/* Trend + concern */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <Card title="Complaints & Cost Over Time" sub="Weekly · bars = count, dashed line = cost" className="lg:col-span-3">
-            <WeeklyTrend data={trend} />
-          </Card>
-          <Card title="Concern Breakdown" className="lg:col-span-2">
-            <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-          </Card>
-        </div>
+        {/* View-specific content */}
+        {viewMode === "overview" && (
+          <>
+            {/* Trend + concern */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              <Card
+                title="Complaints & Cost Over Time"
+                sub={`${timePeriod.charAt(0).toUpperCase() + timePeriod.slice(1)} view · bars = count, dashed line = cost`}
+                className="lg:col-span-3"
+              >
+                <WeeklyTrend data={trendData} />
+              </Card>
+              <Card title="Concern Breakdown" className="lg:col-span-2">
+                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+              </Card>
+            </div>
 
-        {/* SKU pareto */}
-        <Card title="Top 10 SKUs by Complaint Count" sub="SKU or product name as entered">
-          <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-        </Card>
+            {/* SKU pareto */}
+            <Card title="Top 10 SKUs by Complaint Count" sub="SKU or product name as entered">
+              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+            </Card>
+          </>
+        )}
+
+        {viewMode === "sku-trend" && (
+          <>
+            <Card
+              title="SKU Complaints Over Time"
+              sub={`Showing top SKUs by complaint count · ${timePeriod} view`}
+            >
+              <SkuTrendTable data={skuTrend} />
+            </Card>
+
+            <Card title="Top 10 SKUs Overall" sub="Ranking by total complaint count">
+              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+            </Card>
+          </>
+        )}
+
+        {viewMode === "concern-analysis" && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card title="Concern Breakdown" sub="By complaint count">
+                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+              </Card>
+              <Card title="Concern Cost Impact" sub="Total resolution cost by concern type">
+                <HorizontalBar
+                  data={concerns.map((c) => ({
+                    label: c.concern,
+                    value: Math.round(c.count * kpis.avgCost),
+                  }))}
+                  color="#8b5cf6"
+                  formatter={(v) => `$${v.toLocaleString()}`}
+                />
+              </Card>
+            </div>
+          </>
+        )}
 
         {/* Ticket table */}
         <Card title="Complaint Log" sub="Click a Shopify order number to open the Gorgias ticket">
