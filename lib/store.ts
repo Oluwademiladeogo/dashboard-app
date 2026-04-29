@@ -34,7 +34,7 @@ export const useFilterStore = create<FilterStore>()(
       resetFilters: () => set(defaultState),
     }),
     {
-      name: "dashboard-filters",
+      name: "dashboard-filters-v2",
       // Dates don't survive JSON serialisation as Date objects
       storage: {
         getItem: (name) => {
