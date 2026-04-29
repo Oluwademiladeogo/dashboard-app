@@ -4,8 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { fetchFoodSafety } from "@/lib/data";
 import { applyFoodSafetyFilters } from "@/lib/filters";
 import {
-  foodSafetyKpis, skuPareto, concernBreakdown,
-  weeklyComplaintTrend,
+  foodSafetyKpis, skuPareto, concernBreakdown, weeklyComplaintTrend,
 } from "@/lib/transforms";
 import { useFilterStore } from "@/lib/store";
 import type { FoodSafetyTicket } from "@/lib/types";
@@ -59,20 +58,6 @@ function Card({ title, sub, children, className = "" }: {
       </div>
       {children}
     </div>
-  );
-}
-
-// ── FC badge ──────────────────────────────────────────────────────────────────
-function FcBadge({ fc }: { fc: string | null }) {
-  const styles: Record<string, string> = {
-    RMFG: "bg-blue-50 text-blue-700 ring-1 ring-blue-200",
-    COG:  "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
-    GRIPCA: "bg-teal-50 text-teal-700 ring-1 ring-teal-200",
-  };
-  return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${styles[fc ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
-      {fc ?? "—"}
-    </span>
   );
 }
 
@@ -136,7 +121,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
             type="text"
             placeholder="Search by order #, customer, SKU, concern…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full border border-slate-300 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
         </div>
@@ -152,7 +137,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
               <Th label="Customer" field="customerName" />
               <Th label="SKU" field="skuInQuestion" />
               <Th label="Packaging" field="packagingType" />
-              <Th label="FC" field="fulfillmentCenter" w="w-16" />
               <Th label="Concern" field="perceivedConcern" />
               <Th label="Action" field="correctiveAction" />
               <Th label="Cost" field="resolutionCost" w="w-16" />
@@ -160,14 +144,14 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {paged.length === 0 && (
+            {sorted.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3 py-10 text-center text-slate-400 text-sm">
+                <td colSpan={9} className="px-3 py-10 text-center text-slate-400 text-sm">
                   No tickets match the current filters
                 </td>
               </tr>
             )}
-            {paged.map((t, i) => (
+            {sorted.map((t, i) => (
               <tr key={i} className="hover:bg-slate-50/60 transition-colors group">
                 <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
                   {t.gorgiasLink ? (
@@ -183,7 +167,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                 <td className="px-3 py-2 text-xs text-slate-800 max-w-[130px] truncate font-medium">{t.customerName ?? "—"}</td>
                 <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[130px] truncate" title={t.skuInQuestion ?? ""}>{t.skuInQuestion ?? "—"}</td>
                 <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{t.packagingType ?? "—"}</td>
-                <td className="px-3 py-2"><FcBadge fc={t.fulfillmentCenter} /></td>
                 <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[200px] truncate" title={t.perceivedConcern ?? ""}>{t.perceivedConcern ?? "—"}</td>
                 <td className="px-3 py-2 text-[11px] text-slate-600 max-w-[180px] truncate" title={t.correctiveAction ?? ""}>{t.correctiveAction ?? "—"}</td>
                 <td className="px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap">
@@ -202,51 +185,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
           </tbody>
         </table>
       </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
-            className="px-3 py-1 text-xs border border-slate-200 rounded-md text-slate-600 disabled:opacity-40 hover:bg-slate-50 hover:border-slate-300 transition-colors">
-            ← Previous
-          </button>
-          <span className="text-xs text-slate-400">Page {page + 1} of {totalPages}</span>
-          <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1}
-            className="px-3 py-1 text-xs border border-slate-200 rounded-md text-slate-600 disabled:opacity-40 hover:bg-slate-50 hover:border-slate-300 transition-colors">
-            Next →
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── FC summary row ─────────────────────────────────────────────────────────────
-function FcSummaryBar({ fcs }: { fcs: { fc: string; count: number; cost: number }[] }) {
-  const total = fcs.reduce((s, f) => s + f.count, 0);
-  const styles: Record<string, { bg: string; bar: string; text: string }> = {
-    RMFG:   { bg: "bg-blue-50 border-blue-200",   bar: "bg-blue-500",   text: "text-blue-700" },
-    COG:    { bg: "bg-violet-50 border-violet-200", bar: "bg-violet-500", text: "text-violet-700" },
-    GRIPCA: { bg: "bg-teal-50 border-teal-200",   bar: "bg-teal-500",   text: "text-teal-700" },
-  };
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      {fcs.map((f) => {
-        const s = styles[f.fc] ?? { bg: "bg-slate-50 border-slate-200", bar: "bg-slate-400", text: "text-slate-700" };
-        const pct = total > 0 ? (f.count / total) * 100 : 0;
-        return (
-          <div key={f.fc} className={`rounded-lg border p-4 ${s.bg}`}>
-            <div className="flex items-center justify-between mb-2">
-              <span className={`text-xs font-bold ${s.text}`}>{f.fc}</span>
-              <span className="text-xs text-slate-500">${f.cost.toFixed(0)}</span>
-            </div>
-            <p className={`text-xl font-bold ${s.text}`}>{f.count}</p>
-            <p className="text-xs text-slate-500 mb-2">complaints · {pct.toFixed(0)}% of total</p>
-            <div className="w-full bg-white/60 rounded-full h-1.5 overflow-hidden">
-              <div className={`h-full rounded-full ${s.bar}`} style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -280,9 +218,7 @@ export default function FoodSafetyPage() {
   const kpis = useMemo(() => foodSafetyKpis(tickets), [tickets]);
   const sku = useMemo(() => skuPareto(tickets, 10), [tickets]);
   const concerns = useMemo(() => concernBreakdown(tickets), [tickets]);
-  const costByAction = useMemo(() => costByActionType(tickets), [tickets]);
   const trend = useMemo(() => weeklyComplaintTrend(tickets), [tickets]);
-  const fcs = useMemo(() => fcBreakdown(tickets), [tickets]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -345,22 +281,10 @@ export default function FoodSafetyPage() {
           </Card>
         </div>
 
-        {/* SKU pareto + cost by action */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card title="Top 10 SKUs by Complaint Count" sub="SKU or product name as entered">
-            <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-          </Card>
-          <Card title="Resolution Cost by Action Type" sub="Total spend per resolution category">
-            <HorizontalBar
-              data={costByAction.map((c) => ({ label: c.action, value: Math.round(c.totalCost) }))}
-              formatter={(v) => `$${v.toLocaleString()}`}
-              color="#8b5cf6"
-            />
-          </Card>
-        </div>
-
-        {/* FC breakdown */}
-        <FcSummaryBar fcs={fcs} />
+        {/* SKU pareto */}
+        <Card title="Top 10 SKUs by Complaint Count" sub="SKU or product name as entered">
+          <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+        </Card>
 
         {/* Ticket table */}
         <Card title="Complaint Log" sub="Click a Shopify order number to open the Gorgias ticket">

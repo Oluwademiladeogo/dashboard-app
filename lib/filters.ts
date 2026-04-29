@@ -10,11 +10,6 @@ export function applyFoodSafetyFilters(
     if (filters.dateTo && t.dateOfComplaint && t.dateOfComplaint > filters.dateTo)
       return false;
     if (
-      filters.fulfillmentCenters.length > 0 &&
-      !filters.fulfillmentCenters.includes(t.fulfillmentCenter ?? "")
-    )
-      return false;
-    if (
       filters.packagingTypes.length > 0 &&
       !filters.packagingTypes.some((p) =>
         (t.packagingType ?? "").toLowerCase().includes(p.toLowerCase())

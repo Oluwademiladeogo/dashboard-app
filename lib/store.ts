@@ -4,17 +4,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { FilterState } from "./types";
 
-const fourWeeksAgo = (): Date => {
-  const d = new Date();
-  d.setDate(d.getDate() - 28);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
 interface FilterStore extends FilterState {
   setDateFrom: (d: Date | null) => void;
   setDateTo: (d: Date | null) => void;
-  setFulfillmentCenters: (fcs: string[]) => void;
   setPackagingTypes: (types: string[]) => void;
   setCarriers: (carriers: string[]) => void;
   setDestinationStates: (states: string[]) => void;
@@ -22,7 +14,7 @@ interface FilterStore extends FilterState {
 }
 
 const defaultState: FilterState = {
-  dateFrom: fourWeeksAgo(),
+  dateFrom: null,
   dateTo: null,
   fulfillmentCenters: [],
   packagingTypes: [],
@@ -36,7 +28,6 @@ export const useFilterStore = create<FilterStore>()(
       ...defaultState,
       setDateFrom: (d) => set({ dateFrom: d }),
       setDateTo: (d) => set({ dateTo: d }),
-      setFulfillmentCenters: (fcs) => set({ fulfillmentCenters: fcs }),
       setPackagingTypes: (types) => set({ packagingTypes: types }),
       setCarriers: (carriers) => set({ carriers }),
       setDestinationStates: (states) => set({ destinationStates: states }),
