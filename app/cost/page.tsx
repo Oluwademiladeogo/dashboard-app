@@ -15,15 +15,21 @@ import {
   withRollingAvg,
 } from "@/lib/transforms";
 import type { OpsTicket, ShipmentWeek, ShippingCategory, WeeklyCostPoint } from "@/lib/types";
-import CostTrendLine from "@/components/charts/CostTrendLine";
-import HorizontalBar from "@/components/charts/HorizontalBar";
+import { useFilterStore } from "@/lib/store";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -46,6 +52,7 @@ const VALUE_STYLES = {
 } as const;
 type Accent = keyof typeof ACCENT_STYLES;
 
+// ── Generic UI bits ─────────────────────────────────────────────────────────
 function StatCard({
   label,
   value,
@@ -83,7 +90,7 @@ function Card({
 }) {
   return (
     <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
-      <div className="mb-4 flex items-start justify-between">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
           {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
@@ -118,81 +125,333 @@ function FilterChip({
   );
 }
 
-function fmtUsd(n: number, digits = 0) {
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: digits })}`;
+function ChartTypeToggle<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { key: T; label: string }[];
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+            value === o.key
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
+// ── Formatting ──────────────────────────────────────────────────────────────
+function fmtUsd(n: number, digits = 0) {
+  return `$${n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits === 2 ? 2 : 0 })}`;
+}
+function fmt2(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── Tile 1 — cost-per-order trend (line / bar / area) ────────────────────────
+type TrendType = "line" | "bar" | "area";
+function CostPerOrderChart({
+  data,
+  periodAvg,
+  type,
+}: {
+  data: { weekLabel: string; costPerOrder: number; rollingAvg: number | null }[];
+  periodAvg: number;
+  type: TrendType;
+}) {
+  const firstNonZero = data.findIndex((d) => d.costPerOrder > 0);
+  const visible = data.slice(firstNonZero >= 0 ? firstNonZero : 0);
+  const axisProps = {
+    tick: { fontSize: 10, fill: "#94a3b8" },
+    axisLine: false as const,
+    tickLine: false as const,
+  };
+  const tooltip = (
+    <Tooltip
+      formatter={((v: unknown, name: unknown) => [fmtUsd(Number(v), 2), String(name)]) as never}
+      contentStyle={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, color: "#0f172a" }}
+      labelStyle={{ color: "#475569", fontWeight: 600, marginBottom: 4 }}
+      itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+    />
+  );
+  const refLine = (
+    <ReferenceLine
+      y={periodAvg}
+      stroke="#94a3b8"
+      strokeDasharray="6 3"
+      strokeWidth={1}
+      label={{ value: `Avg ${fmtUsd(periodAvg, 2)}`, position: "insideTopRight", fontSize: 10, fill: "#94a3b8" }}
+    />
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      {type === "line" ? (
+        <ComposedChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="weekLabel" {...axisProps} interval={Math.floor(visible.length / 8)} />
+          <YAxis {...axisProps} tickFormatter={(v) => fmtUsd(v, 0)} width={48} domain={[0, "auto"]} />
+          {tooltip}
+          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
+          {refLine}
+          <Line type="monotone" dataKey="costPerOrder" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} name="Cost / order" connectNulls />
+          <Line type="monotone" dataKey="rollingAvg" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="4-wk avg" connectNulls />
+        </ComposedChart>
+      ) : type === "area" ? (
+        <AreaChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="weekLabel" {...axisProps} interval={Math.floor(visible.length / 8)} />
+          <YAxis {...axisProps} tickFormatter={(v) => fmtUsd(v, 0)} width={48} domain={[0, "auto"]} />
+          {tooltip}
+          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
+          {refLine}
+          <Area type="monotone" dataKey="costPerOrder" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.18} strokeWidth={2} name="Cost / order" />
+        </AreaChart>
+      ) : (
+        <BarChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="weekLabel" {...axisProps} interval={Math.floor(visible.length / 8)} />
+          <YAxis {...axisProps} tickFormatter={(v) => fmtUsd(v, 0)} width={48} domain={[0, "auto"]} />
+          {tooltip}
+          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
+          {refLine}
+          <Bar dataKey="costPerOrder" fill="#3b82f6" name="Cost / order" radius={[3, 3, 0, 0]} maxBarSize={20} />
+        </BarChart>
+      )}
+    </ResponsiveContainer>
+  );
+}
+
+// ── Tile 2 — cost per issue type (horizontal bar / vertical bar / donut) ─────
+type IssueTypeChartType = "bar-h" | "bar-v" | "donut";
+const TYPE_COLORS = ["#8b5cf6", "#3b82f6", "#f59e0b", "#10b981", "#ec4899", "#ef4444", "#14b8a6", "#a855f7"];
+function CostByTypeChart({
+  data,
+  type,
+}: {
+  data: { category: string; totalCost: number; count: number; avgCost: number }[];
+  type: IssueTypeChartType;
+}) {
+  if (type === "donut") {
+    return (
+      <ResponsiveContainer width="100%" height={320}>
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="totalCost"
+            nameKey="category"
+            innerRadius={70}
+            outerRadius={110}
+            paddingAngle={2}
+            label={((p: { name?: string; percent?: number }) =>
+              `${p.name ?? ""} ${fmt2((p.percent ?? 0) * 100)}%`) as never}
+            labelLine={false}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={((v: unknown, n: unknown) => [fmtUsd(Number(v)), String(n)]) as never}
+            contentStyle={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, color: "#0f172a" }}
+      labelStyle={{ color: "#475569", fontWeight: 600, marginBottom: 4 }}
+      itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  const max = Math.max(...data.map((d) => d.totalCost), 1);
+  if (type === "bar-v") {
+    return (
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={data} margin={{ top: 8, right: 16, bottom: 32, left: 16 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis
+            dataKey="category"
+            tick={{ fontSize: 10, fill: "#475569" }}
+            axisLine={false}
+            tickLine={false}
+            angle={-15}
+            textAnchor="end"
+            height={50}
+          />
+          <YAxis
+            tick={{ fontSize: 10, fill: "#94a3b8" }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v) => fmtUsd(v)}
+            width={60}
+            domain={[0, max * 1.1]}
+          />
+          <Tooltip
+            formatter={((v: unknown) => fmtUsd(Number(v))) as never}
+            contentStyle={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, color: "#0f172a" }}
+      labelStyle={{ color: "#475569", fontWeight: 600, marginBottom: 4 }}
+      itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+          />
+          <Bar dataKey="totalCost" radius={[4, 4, 0, 0]} maxBarSize={48}>
+            {data.map((_, i) => (
+              <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  // horizontal bar
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(180, data.length * 38)}>
+      <BarChart layout="vertical" data={data} margin={{ top: 0, right: 48, bottom: 0, left: 8 }}>
+        <XAxis
+          type="number"
+          tick={{ fontSize: 10, fill: "#94a3b8" }}
+          tickFormatter={(v) => fmtUsd(v)}
+          axisLine={false}
+          tickLine={false}
+          domain={[0, max * 1.1]}
+        />
+        <YAxis
+          type="category"
+          dataKey="category"
+          width={155}
+          tick={{ fontSize: 11, fill: "#475569" }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <Tooltip
+          formatter={((v: unknown) => fmtUsd(Number(v))) as never}
+          cursor={{ fill: "#f1f5f9" }}
+          contentStyle={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, color: "#0f172a" }}
+      labelStyle={{ color: "#475569", fontWeight: 600, marginBottom: 4 }}
+      itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+        />
+        <Bar dataKey="totalCost" radius={[0, 4, 4, 0]} maxBarSize={22}>
+          {data.map((_, i) => (
+            <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Tile 3 — issues & orders (bar+line / lines / bars) ───────────────────────
+type IssuesOrdersType = "composed" | "lines" | "bars";
 function IssuesVsOrders({
   data,
+  type,
 }: {
   data: { weekLabel: string; issues: number; orders: number; ratePer1k: number }[];
+  type: IssuesOrdersType;
 }) {
+  const axis = {
+    tick: { fontSize: 10, fill: "#94a3b8" },
+    axisLine: false as const,
+    tickLine: false as const,
+  };
+  const tooltip = (
+    <Tooltip
+      formatter={((v: unknown, name: unknown) => {
+        const num = Number(v);
+        return name === "Issues / 1k orders"
+          ? [fmt2(num), String(name)]
+          : [num.toLocaleString(), String(name)];
+      }) as never}
+      contentStyle={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, color: "#0f172a" }}
+      labelStyle={{ color: "#475569", fontWeight: 600, marginBottom: 4 }}
+      itemStyle={{ color: "#0f172a", fontWeight: 600 }}
+    />
+  );
+  const xAxis = (
+    <XAxis
+      dataKey="weekLabel"
+      {...axis}
+      interval={Math.max(1, Math.floor(data.length / 10))}
+    />
+  );
+  const leftY = <YAxis yAxisId="left" {...axis} width={40} />;
+  const rightY = (
+    <YAxis
+      yAxisId="right"
+      orientation="right"
+      {...axis}
+      width={48}
+      tickFormatter={(v) => fmt2(v)}
+    />
+  );
+  const legend = <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={7} />;
+
+  if (type === "lines") {
+    return (
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          {xAxis}
+          {leftY}
+          {rightY}
+          {tooltip}
+          {legend}
+          <Line yAxisId="left" type="monotone" dataKey="orders" stroke="#3b82f6" strokeWidth={2} dot={false} name="Orders" />
+          <Line yAxisId="left" type="monotone" dataKey="issues" stroke="#f59e0b" strokeWidth={2} dot={false} name="Issues" />
+          <Line yAxisId="right" type="monotone" dataKey="ratePer1k" stroke="#dc2626" strokeWidth={2} dot={false} name="Issues / 1k orders" />
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  if (type === "bars") {
+    return (
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          {xAxis}
+          {leftY}
+          {rightY}
+          {tooltip}
+          {legend}
+          <Bar yAxisId="left" dataKey="orders" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={16} name="Orders" />
+          <Bar yAxisId="left" dataKey="issues" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={16} name="Issues" />
+          <Bar yAxisId="right" dataKey="ratePer1k" fill="#dc2626" radius={[3, 3, 0, 0]} maxBarSize={16} name="Issues / 1k orders" />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  // composed (default)
   return (
     <ResponsiveContainer width="100%" height={260}>
       <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-        <XAxis
-          dataKey="weekLabel"
-          tick={{ fontSize: 10, fill: "#94a3b8" }}
-          axisLine={false}
-          tickLine={false}
-          interval={Math.max(1, Math.floor(data.length / 10))}
-        />
-        <YAxis
-          yAxisId="left"
-          tick={{ fontSize: 10, fill: "#94a3b8" }}
-          axisLine={false}
-          tickLine={false}
-          width={40}
-        />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tick={{ fontSize: 10, fill: "#94a3b8" }}
-          axisLine={false}
-          tickLine={false}
-          width={36}
-          tickFormatter={(v) => `${v}`}
-        />
-        <Tooltip
-          contentStyle={{
-            background: "white",
-            border: "1px solid #e2e8f0",
-            borderRadius: 6,
-            fontSize: 11,
-          }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={7} />
-        <Bar
-          yAxisId="left"
-          dataKey="orders"
-          fill="#bfdbfe"
-          radius={[3, 3, 0, 0]}
-          maxBarSize={20}
-          name="Orders"
-        />
-        <Bar
-          yAxisId="left"
-          dataKey="issues"
-          fill="#f59e0b"
-          radius={[3, 3, 0, 0]}
-          maxBarSize={20}
-          name="Issues"
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          dataKey="ratePer1k"
-          stroke="#dc2626"
-          strokeWidth={2}
-          dot={false}
-          name="Issues / 1k orders"
-        />
+        {xAxis}
+        {leftY}
+        {rightY}
+        {tooltip}
+        {legend}
+        <Bar yAxisId="left" dataKey="orders" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={20} name="Orders" />
+        <Bar yAxisId="left" dataKey="issues" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={20} name="Issues" />
+        <Line yAxisId="right" type="monotone" dataKey="ratePer1k" stroke="#dc2626" strokeWidth={2} dot={false} name="Issues / 1k orders" />
       </ComposedChart>
     </ResponsiveContainer>
   );
 }
 
+// ── Page ────────────────────────────────────────────────────────────────────
 export default function CostPage() {
   const [ops, setOps] = useState<OpsTicket[]>([]);
   const [shipments, setShipments] = useState<ShipmentWeek[]>([]);
@@ -200,6 +459,12 @@ export default function CostPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeShipping, setActiveShipping] = useState<ShippingCategory[]>([]);
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = useFilterStore();
+
+  // chart-type toggles
+  const [trendType, setTrendType] = useState<TrendType>("line");
+  const [byTypeChart, setByTypeChart] = useState<IssueTypeChartType>("bar-h");
+  const [issuesOrdersType, setIssuesOrdersType] = useState<IssuesOrdersType>("composed");
 
   useEffect(() => {
     Promise.all([fetchOpsTickets(), fetchShipments(), fetchWeeklyCostPerOrder()])
@@ -221,16 +486,45 @@ export default function CostPage() {
     );
   };
 
-  const trend = useMemo(() => withRollingAvg(weeklyCost, 4), [weeklyCost]);
-  const kpis = useMemo(() => costKpis(weeklyCost, ops), [weeklyCost, ops]);
-  const byType = useMemo(() => opsCostByCategory(ops, activeShipping), [ops, activeShipping]);
+  const filteredOps = useMemo(
+    () =>
+      ops.filter((t) => {
+        if (!t.date) return false;
+        if (dateFrom && t.date < dateFrom) return false;
+        if (dateTo && t.date > dateTo) return false;
+        return true;
+      }),
+    [ops, dateFrom, dateTo]
+  );
+  const filteredShipments = useMemo(
+    () =>
+      shipments.filter((s) => {
+        if (dateFrom && s.weekEnd < dateFrom) return false;
+        if (dateTo && s.weekStart > dateTo) return false;
+        return true;
+      }),
+    [shipments, dateFrom, dateTo]
+  );
+  const filteredWeeklyCost = useMemo(
+    () =>
+      weeklyCost.filter((p) => {
+        if (dateFrom && p.weekStart < dateFrom) return false;
+        if (dateTo && p.weekStart > dateTo) return false;
+        return true;
+      }),
+    [weeklyCost, dateFrom, dateTo]
+  );
+
+  const trend = useMemo(() => withRollingAvg(filteredWeeklyCost, 4), [filteredWeeklyCost]);
+  const kpis = useMemo(() => costKpis(filteredWeeklyCost, filteredOps), [filteredWeeklyCost, filteredOps]);
+  const byType = useMemo(() => opsCostByCategory(filteredOps, activeShipping), [filteredOps, activeShipping]);
   const issuesOrders = useMemo(
-    () => weeklyIssuesAndOrders(ops, shipments, activeShipping),
-    [ops, shipments, activeShipping]
+    () => weeklyIssuesAndOrders(filteredOps, filteredShipments, activeShipping),
+    [filteredOps, filteredShipments, activeShipping]
   );
   const impact = useMemo(
-    () => boxCostImpact(ops, shipments, activeShipping),
-    [ops, shipments, activeShipping]
+    () => boxCostImpact(filteredOps, filteredShipments, activeShipping),
+    [filteredOps, filteredShipments, activeShipping]
   );
 
   if (loading) {
@@ -249,7 +543,6 @@ export default function CostPage() {
   const impactDelta = impact.currentImpact - impact.priorImpact;
   const impactDeltaPct =
     impact.priorImpact > 0 ? (impactDelta / impact.priorImpact) * 100 : 0;
-
   const trendDelta = kpis.latest - kpis.avg4w;
 
   return (
@@ -260,7 +553,7 @@ export default function CostPage() {
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Cost of Issues</h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              Issue cost per order and cost per issue type — the trend Kurt watches for PnL impact.
+              Issue cost per order and cost per issue type.
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -269,25 +562,49 @@ export default function CostPage() {
           </div>
         </div>
 
-        {/* Shipping classification filter */}
-        <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-3">
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide mr-2">
-            Filter by shipping issue
-          </span>
-          {SHIPPING_CATEGORIES.map((c) => (
-            <FilterChip
-              key={c}
-              label={c}
-              active={activeShipping.includes(c)}
-              onClick={() => toggleShipping(c)}
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-white border border-slate-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Date</span>
+            <input
+              type="date"
+              value={dateFrom ? dateFrom.toISOString().slice(0, 10) : ""}
+              onChange={(e) => setDateFrom(e.target.value ? new Date(e.target.value) : null)}
+              className="border border-slate-300 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             />
-          ))}
-          {activeShipping.length > 0 && (
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={dateTo ? dateTo.toISOString().slice(0, 10) : ""}
+              onChange={(e) => setDateTo(e.target.value ? new Date(e.target.value) : null)}
+              className="border border-slate-300 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+            />
+          </div>
+
+          <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Shipping issue</span>
+            {SHIPPING_CATEGORIES.map((c) => (
+              <FilterChip
+                key={c}
+                label={c}
+                active={activeShipping.includes(c)}
+                onClick={() => toggleShipping(c)}
+              />
+            ))}
+          </div>
+
+          {(activeShipping.length > 0 || dateFrom || dateTo) && (
             <button
-              onClick={() => setActiveShipping([])}
+              onClick={() => {
+                setActiveShipping([]);
+                setDateFrom(null);
+                setDateTo(null);
+              }}
               className="ml-auto text-xs text-slate-500 hover:text-slate-800"
             >
-              Clear
+              Reset filters
             </button>
           )}
         </div>
@@ -315,7 +632,7 @@ export default function CostPage() {
             value={fmtUsd(impact.currentImpact, 2)}
             sub={
               impact.priorImpact > 0
-                ? `${impactDelta >= 0 ? "↑" : "↓"} ${Math.abs(impactDeltaPct).toFixed(0)}% vs prior half`
+                ? `${impactDelta >= 0 ? "↑" : "↓"} ${fmt2(Math.abs(impactDeltaPct))}% vs prior half`
                 : "issue $ ÷ orders"
             }
             accent={impactDelta < 0 ? "green" : "amber"}
@@ -338,18 +655,40 @@ export default function CostPage() {
           />
         </div>
 
-        {/* Tile 1 — headline cost-per-order trend (unfiltered) */}
+        {/* Tile 1 */}
         <Card
           title="Cost of issues per order, weekly"
           sub="Resolution $ ÷ orders shipped. Down = good. Filter chips above don't apply here — this is the raw PnL signal."
+          headerRight={
+            <ChartTypeToggle
+              value={trendType}
+              onChange={setTrendType}
+              options={[
+                { key: "line", label: "Line" },
+                { key: "area", label: "Area" },
+                { key: "bar", label: "Bar" },
+              ]}
+            />
+          }
         >
-          <CostTrendLine data={trend} periodAvg={kpis.periodAvg} />
+          <CostPerOrderChart data={trend} periodAvg={kpis.periodAvg} type={trendType} />
         </Card>
 
-        {/* Tile 2 — cost per issue type */}
+        {/* Tile 2 */}
         <Card
           title="Cost per issue type"
-          sub="Total resolution $ by issue category. Sorted by total cost."
+          sub="Total resolution $ by issue category. Cost values are estimated from resolution-string keyword matching."
+          headerRight={
+            <ChartTypeToggle
+              value={byTypeChart}
+              onChange={setByTypeChart}
+              options={[
+                { key: "bar-h", label: "Horiz" },
+                { key: "bar-v", label: "Vert" },
+                { key: "donut", label: "Donut" },
+              ]}
+            />
+          }
         >
           {byType.length === 0 ? (
             <div className="text-center text-slate-400 text-xs py-12">
@@ -357,14 +696,7 @@ export default function CostPage() {
             </div>
           ) : (
             <>
-              <HorizontalBar
-                data={byType.map((b) => ({
-                  label: b.category,
-                  value: Math.round(b.totalCost),
-                }))}
-                color="#8b5cf6"
-                formatter={(v) => fmtUsd(v)}
-              />
+              <CostByTypeChart data={byType} type={byTypeChart} />
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 {byType.slice(0, 4).map((b) => (
                   <div
@@ -384,15 +716,26 @@ export default function CostPage() {
           )}
         </Card>
 
-        {/* Tile 3 — issues vs orders */}
+        {/* Tile 3 */}
         <Card
           title="Issues & orders, weekly"
-          sub="Orders (blue) vs. issues (amber) per week. Red line = issues per 1,000 orders."
+          sub="Orders (blue) vs. issues (amber) per week. Red line = issues per 1,000 orders (2dp)."
+          headerRight={
+            <ChartTypeToggle
+              value={issuesOrdersType}
+              onChange={setIssuesOrdersType}
+              options={[
+                { key: "composed", label: "Bars + line" },
+                { key: "lines", label: "Lines" },
+                { key: "bars", label: "Bars" },
+              ]}
+            />
+          }
         >
-          <IssuesVsOrders data={issuesOrders} />
+          <IssuesVsOrders data={issuesOrders} type={issuesOrdersType} />
         </Card>
 
-        {/* Tile 4 — issue type detail table */}
+        {/* Tile 4 — table */}
         <Card title="Issue type detail" sub="Cost breakdown by issue category">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -416,29 +759,21 @@ export default function CostPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {byType.map((b) => {
+                {(() => {
                   const total = byType.reduce((s, x) => s + x.totalCost, 0);
-                  const pct = total > 0 ? (b.totalCost / total) * 100 : 0;
-                  return (
-                    <tr key={b.category} className="hover:bg-slate-50/60">
-                      <td className="px-3 py-2 text-xs font-medium text-slate-800">
-                        {b.category}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600 text-right">
-                        {b.count.toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2 text-xs font-semibold text-slate-800 text-right">
-                        {fmtUsd(b.totalCost)}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600 text-right">
-                        {fmtUsd(b.avgCost, 2)}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-500 text-right">
-                        {pct.toFixed(1)}%
-                      </td>
-                    </tr>
-                  );
-                })}
+                  return byType.map((b) => {
+                    const pct = total > 0 ? (b.totalCost / total) * 100 : 0;
+                    return (
+                      <tr key={b.category} className="hover:bg-slate-50/60">
+                        <td className="px-3 py-2 text-xs font-medium text-slate-800">{b.category}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600 text-right">{b.count.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-xs font-semibold text-slate-800 text-right">{fmtUsd(b.totalCost, 2)}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600 text-right">{fmtUsd(b.avgCost, 2)}</td>
+                        <td className="px-3 py-2 text-xs text-slate-500 text-right">{fmt2(pct)}%</td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
