@@ -10,6 +10,7 @@ import {
   SHIPPING_CATEGORIES,
   boxCostImpact,
   costKpis,
+  isInCurrentWeek,
   opsCostByCategory,
   weeklyIssuesAndOrders,
   withRollingAvg,
@@ -168,12 +169,25 @@ function CostPerOrderChart({
   periodAvg,
   type,
 }: {
-  data: { weekLabel: string; costPerOrder: number; rollingAvg: number | null }[];
+  data: {
+    weekLabel: string;
+    weekLabelDisplay?: string;
+    costPerOrder: number;
+    rollingAvg: number | null;
+    isPartial?: boolean;
+  }[];
   periodAvg: number;
   type: TrendType;
 }) {
   const firstNonZero = data.findIndex((d) => d.costPerOrder > 0);
-  const visible = data.slice(firstNonZero >= 0 ? firstNonZero : 0);
+  const visible = data.slice(firstNonZero >= 0 ? firstNonZero : 0).map((d) => ({
+    ...d,
+    weekLabel: d.weekLabelDisplay ?? d.weekLabel,
+    // Split series so the partial point can be styled differently and the
+    // rolling avg never reflects the in-progress week.
+    costPerOrderComplete: d.isPartial ? null : d.costPerOrder,
+    costPerOrderPartial: d.isPartial ? d.costPerOrder : null,
+  }));
   const axisProps = {
     tick: { fontSize: 10, fill: "#94a3b8" },
     axisLine: false as const,
@@ -207,19 +221,21 @@ function CostPerOrderChart({
           {tooltip}
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
           {refLine}
-          <Line type="monotone" dataKey="costPerOrder" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} name="Cost / order" connectNulls />
+          <Line type="monotone" dataKey="costPerOrderComplete" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} name="Cost / order" connectNulls={false} />
+          <Line type="monotone" dataKey="costPerOrderPartial" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3, fill: "#94a3b8", strokeWidth: 0 }} activeDot={{ r: 5 }} name="In progress" />
           <Line type="monotone" dataKey="rollingAvg" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" dot={false} name="4-wk avg" connectNulls />
         </ComposedChart>
       ) : type === "area" ? (
-        <AreaChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
+        <ComposedChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
           <XAxis dataKey="weekLabel" {...axisProps} interval={Math.floor(visible.length / 8)} />
           <YAxis {...axisProps} tickFormatter={(v) => fmtUsd(v, 0)} width={48} domain={[0, "auto"]} />
           {tooltip}
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
           {refLine}
-          <Area type="monotone" dataKey="costPerOrder" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.18} strokeWidth={2} name="Cost / order" />
-        </AreaChart>
+          <Area type="monotone" dataKey="costPerOrderComplete" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.18} strokeWidth={2} name="Cost / order" connectNulls={false} />
+          <Line type="monotone" dataKey="costPerOrderPartial" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3, fill: "#94a3b8", strokeWidth: 0 }} name="In progress" />
+        </ComposedChart>
       ) : (
         <BarChart data={visible} margin={{ top: 8, right: 20, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -228,7 +244,11 @@ function CostPerOrderChart({
           {tooltip}
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} iconType="circle" iconSize={7} />
           {refLine}
-          <Bar dataKey="costPerOrder" fill="#3b82f6" name="Cost / order" radius={[3, 3, 0, 0]} maxBarSize={20} />
+          <Bar dataKey="costPerOrder" radius={[3, 3, 0, 0]} maxBarSize={20} name="Cost / order">
+            {visible.map((d, i) => (
+              <Cell key={i} fill={d.isPartial ? "#cbd5e1" : "#3b82f6"} />
+            ))}
+          </Bar>
         </BarChart>
       )}
     </ResponsiveContainer>
@@ -357,7 +377,13 @@ function IssuesVsOrders({
   data,
   type,
 }: {
-  data: { weekLabel: string; issues: number; orders: number; ratePer1k: number }[];
+  data: {
+    weekLabel: string;
+    issues: number;
+    orders: number;
+    ratePer1k: number | null;
+    isPartial: boolean;
+  }[];
   type: IssuesOrdersType;
 }) {
   const axis = {
@@ -425,8 +451,16 @@ function IssuesVsOrders({
           {rightY}
           {tooltip}
           {legend}
-          <Bar yAxisId="left" dataKey="orders" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={16} name="Orders" />
-          <Bar yAxisId="left" dataKey="issues" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={16} name="Issues" />
+          <Bar yAxisId="left" dataKey="orders" radius={[3, 3, 0, 0]} maxBarSize={16} name="Orders">
+            {data.map((d, i) => (
+              <Cell key={i} fill={d.isPartial ? "#e2e8f0" : "#bfdbfe"} />
+            ))}
+          </Bar>
+          <Bar yAxisId="left" dataKey="issues" radius={[3, 3, 0, 0]} maxBarSize={16} name="Issues">
+            {data.map((d, i) => (
+              <Cell key={i} fill={d.isPartial ? "#fde68a" : "#f59e0b"} />
+            ))}
+          </Bar>
           <Bar yAxisId="right" dataKey="ratePer1k" fill="#dc2626" radius={[3, 3, 0, 0]} maxBarSize={16} name="Issues / 1k orders" />
         </BarChart>
       </ResponsiveContainer>
@@ -443,9 +477,17 @@ function IssuesVsOrders({
         {rightY}
         {tooltip}
         {legend}
-        <Bar yAxisId="left" dataKey="orders" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={20} name="Orders" />
-        <Bar yAxisId="left" dataKey="issues" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={20} name="Issues" />
-        <Line yAxisId="right" type="monotone" dataKey="ratePer1k" stroke="#dc2626" strokeWidth={2} dot={false} name="Issues / 1k orders" />
+        <Bar yAxisId="left" dataKey="orders" radius={[3, 3, 0, 0]} maxBarSize={20} name="Orders">
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.isPartial ? "#e2e8f0" : "#bfdbfe"} />
+          ))}
+        </Bar>
+        <Bar yAxisId="left" dataKey="issues" radius={[3, 3, 0, 0]} maxBarSize={20} name="Issues">
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.isPartial ? "#fde68a" : "#f59e0b"} />
+          ))}
+        </Bar>
+        <Line yAxisId="right" type="monotone" dataKey="ratePer1k" stroke="#dc2626" strokeWidth={2} dot={false} name="Issues / 1k orders" connectNulls={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -515,16 +557,34 @@ export default function CostPage() {
     [weeklyCost, dateFrom, dateTo]
   );
 
+  // "Complete" datasets exclude the in-progress (current calendar) week —
+  // used for KPIs, deltas, totals, and the byType table.
+  const completeOps = useMemo(
+    () => filteredOps.filter((t) => !isInCurrentWeek(t.date)),
+    [filteredOps]
+  );
+  const completeShipments = useMemo(
+    () => filteredShipments.filter((s) => !isInCurrentWeek(s.weekStart)),
+    [filteredShipments]
+  );
+  const completeWeeklyCost = useMemo(
+    () => filteredWeeklyCost.filter((p) => !isInCurrentWeek(p.weekStart)),
+    [filteredWeeklyCost]
+  );
+
+  // Charts include the in-progress week (visually distinguished).
   const trend = useMemo(() => withRollingAvg(filteredWeeklyCost, 4), [filteredWeeklyCost]);
-  const kpis = useMemo(() => costKpis(filteredWeeklyCost, filteredOps), [filteredWeeklyCost, filteredOps]);
-  const byType = useMemo(() => opsCostByCategory(filteredOps, activeShipping), [filteredOps, activeShipping]);
   const issuesOrders = useMemo(
     () => weeklyIssuesAndOrders(filteredOps, filteredShipments, activeShipping),
     [filteredOps, filteredShipments, activeShipping]
   );
+
+  // KPIs / aggregates use complete data only.
+  const kpis = useMemo(() => costKpis(completeWeeklyCost, completeOps), [completeWeeklyCost, completeOps]);
+  const byType = useMemo(() => opsCostByCategory(completeOps, activeShipping), [completeOps, activeShipping]);
   const impact = useMemo(
-    () => boxCostImpact(filteredOps, filteredShipments, activeShipping),
-    [filteredOps, filteredShipments, activeShipping]
+    () => boxCostImpact(completeOps, completeShipments, activeShipping),
+    [completeOps, completeShipments, activeShipping]
   );
 
   if (loading) {
@@ -561,6 +621,10 @@ export default function CostPage() {
             Live
           </div>
         </div>
+
+        <p className="text-[11px] text-slate-500 -mt-2">
+          The current calendar week is shown on charts in grey/dashed (labelled <em>in progress</em>) but excluded from KPIs, deltas, and totals.
+        </p>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-white border border-slate-200 rounded-lg p-3">

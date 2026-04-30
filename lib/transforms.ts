@@ -281,6 +281,26 @@ export function fcBreakdown(
 // OPS / COST TRANSFORMS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Monday 00:00 of the calendar week containing `ref` (defaults to today).
+// Mon–Sun aligns with the Shipments sheet convention.
+export function weekStartMonday(ref: Date = new Date()): Date {
+  const d = new Date(ref);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d);
+  monday.setDate(diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+export function isInCurrentWeek(d: Date | null): boolean {
+  if (!d) return false;
+  const monday = weekStartMonday();
+  const nextMonday = new Date(monday);
+  nextMonday.setDate(monday.getDate() + 7);
+  return d >= monday && d < nextMonday;
+}
+
 export const SHIPPING_CATEGORIES: ShippingCategory[] = [
   "Arrived Warm",
   "Delayed in Transit",
@@ -387,18 +407,24 @@ export function weeklyOpsVolume(
     }));
 }
 
-// Rolling N-week average for cost-per-order trend
+// Rolling N-week average for cost-per-order trend.
+// Excludes the current (in-progress) week from the rolling window since its
+// cost figure is incomplete.
 export function withRollingAvg(
   points: WeeklyCostPoint[],
   n = 4
-): (WeeklyCostPoint & { rollingAvg: number | null })[] {
+): (WeeklyCostPoint & { rollingAvg: number | null; isPartial: boolean; weekLabelDisplay: string })[] {
   return points.map((p, i) => {
-    const window = points.slice(Math.max(0, i - n + 1), i + 1).filter((x) => x.costPerOrder > 0);
+    const isPartial = isInCurrentWeek(p.weekStart);
+    const window = points
+      .slice(Math.max(0, i - n + 1), i + 1)
+      .filter((x) => x.costPerOrder > 0 && !isInCurrentWeek(x.weekStart));
     const rollingAvg =
       window.length >= 2
         ? window.reduce((s, x) => s + x.costPerOrder, 0) / window.length
         : null;
-    return { ...p, rollingAvg };
+    const weekLabelDisplay = isPartial ? `${p.weekLabel} (in progress)` : p.weekLabel;
+    return { ...p, rollingAvg, isPartial, weekLabelDisplay };
   });
 }
 
@@ -443,7 +469,14 @@ export function weeklyIssuesAndOrders(
   tickets: OpsTicket[],
   shipments: ShipmentWeek[],
   shippingFilter: ShippingCategory[] = []
-): { week: string; weekLabel: string; issues: number; orders: number; ratePer1k: number }[] {
+): {
+  week: string;
+  weekLabel: string;
+  issues: number;
+  orders: number;
+  ratePer1k: number | null;
+  isPartial: boolean;
+}[] {
   const orders = aggregateShipmentsByWeek(shipments);
   const orderByWeek: Record<string, number> = {};
   for (const o of orders) {
@@ -465,35 +498,27 @@ export function weeklyIssuesAndOrders(
   }
 
   const allWeeks = new Set([...Object.keys(orderByWeek), ...Object.keys(issuesByWeek)]);
-  const rows = Array.from(allWeeks)
+  const currentMondayKey = weekStartMonday().toISOString().slice(0, 10);
+  return Array.from(allWeeks)
     .sort()
     .map((week) => {
       const issues = issuesByWeek[week] ?? 0;
       const ord = orderByWeek[week] ?? 0;
       const d = new Date(week + "T12:00:00Z");
-      const weekLabel = `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+      const isPartial = week === currentMondayKey;
+      const weekLabel = isPartial
+        ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} (in progress)`
+        : `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
       return {
         week,
         weekLabel,
         issues,
         orders: ord,
-        ratePer1k: ord > 0 ? (issues / ord) * 1000 : 0,
+        // Gap the rate line on the partial week — denominator is unreliable.
+        ratePer1k: isPartial ? null : ord > 0 ? (issues / ord) * 1000 : 0,
+        isPartial,
       };
     });
-
-  // Trim trailing partial weeks: any week with < 50% of the prior 4-week
-  // median order count is treated as a mid-export cutoff and dropped.
-  while (rows.length >= 5) {
-    const last = rows[rows.length - 1];
-    const prior = rows.slice(-5, -1).map((r) => r.orders).sort((a, b) => a - b);
-    const median = (prior[1] + prior[2]) / 2;
-    if (median > 0 && last.orders < 0.5 * median) {
-      rows.pop();
-    } else {
-      break;
-    }
-  }
-  return rows;
 }
 
 // ── Avg box cost impact ───────────────────────────────────────────────────────
