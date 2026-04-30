@@ -11,9 +11,15 @@ export default function TopNav() {
       <div className="h-4 w-px bg-slate-200" />
       <Link
         href="/food-safety"
-        className="text-sm font-medium text-slate-900 border-b-2 border-slate-900 pb-0.5 h-12 flex items-center"
+        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
       >
         Food Safety
+      </Link>
+      <Link
+        href="/cost"
+        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
+      >
+        Cost of Issues
       </Link>
     </nav>
   );

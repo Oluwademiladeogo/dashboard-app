@@ -44,6 +44,12 @@ export interface ShipmentWeek {
   total: number;
 }
 
+export interface WeeklyCostPoint {
+  weekLabel: string;
+  weekStart: Date;
+  costPerOrder: number;
+}
+
 export interface FilterState {
   dateFrom: Date | null;
   dateTo: Date | null;
@@ -52,3 +58,5 @@ export interface FilterState {
   carriers: string[];
   destinationStates: string[];
 }
+
+export type ShippingCategory = "Arrived Warm" | "Delayed in Transit" | "Lost in Transit";

@@ -1,10 +1,8 @@
 import Link from "next/link";
 
 const pages = [
-  { href: "/leadership", label: "Leadership Rollup", desc: "KPI scorecards, weekly trends, cost summary" },
+  { href: "/cost", label: "Cost of Issues", desc: "Issue cost per order, cost per issue type, box cost impact" },
   { href: "/food-safety", label: "Food Safety", desc: "Complaint log, SKU pareto, concern breakdown, cost analysis" },
-  { href: "/ops", label: "Ops", desc: "Arrived-warm map, carrier heatmap, transit anomalies" },
-  { href: "/cs", label: "Customer Service", desc: "Issue tags, resolution mix, ticket trend" },
 ];
 
 export default function Home() {

@@ -1,4 +1,4 @@
-import type { FoodSafetyTicket } from "./types";
+import type { FoodSafetyTicket, OpsTicket, WeeklyCostPoint, ShippingCategory, ShipmentWeek } from "./types";
 
 // ── Resolution cost parser ───────────────────────────────────────────────────
 // Parses free-text corrective action into a dollar cost.
@@ -275,6 +275,263 @@ export function fcBreakdown(
   return Object.entries(groups)
     .sort((a, b) => b[1].count - a[1].count)
     .map(([fc, { count, cost }]) => ({ fc, count, cost }));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OPS / COST TRANSFORMS
+// ══════════════════════════════════════════════════════════════════════════════
+
+export const SHIPPING_CATEGORIES: ShippingCategory[] = [
+  "Arrived Warm",
+  "Delayed in Transit",
+  "Lost in Transit",
+];
+
+export function classifyIssueType(issueType: string | null): string {
+  if (!issueType) return "Other";
+  const s = issueType.toLowerCase();
+  if (s.includes("arrived warm")) return "Arrived Warm";
+  if (s.includes("lost in transit") || s.includes("misdelivered")) return "Lost in Transit";
+  if (s.includes("delayed")) return "Delayed in Transit";
+  if (s.includes("missing item") || s.includes("damaged")) return "Missing Item";
+  if (s.includes("sub_") || s.includes("subscription")) return "Subscription/Account";
+  if (s.includes("cancel") || s.includes("billing")) return "Cancellation/Billing";
+  if (s.includes("order")) return "Order Issue";
+  return "Other";
+}
+
+export function matchesShippingFilter(
+  issueType: string | null,
+  activeCategories: ShippingCategory[]
+): boolean {
+  if (activeCategories.length === 0) return true;
+  const cat = classifyIssueType(issueType);
+  return activeCategories.includes(cat as ShippingCategory);
+}
+
+// Estimate resolution cost from the Ops sheet resolution field (no dollar amounts there,
+// so we map from resolution type strings to the Cost of Issues unit cost table).
+export function estimateOpsCost(resolution: string | null): number {
+  if (!resolution) return 0;
+  const r = resolution.toLowerCase();
+  // Reship variants
+  if (r === "full reship") return 65;
+  if (r.includes("::reship") || r === "order::reship") return 65;
+  if (r.includes("partial reship")) return 30;
+  // Refunds
+  if (r.includes("full refund")) return 65;
+  if (r.includes("partial refund")) return 30;
+  if (r.includes("refund")) return 20;
+  // Credits / comps
+  if (r.includes("free item")) return 5.5;
+  if (r.includes("credit")) return 10;
+  return 0;
+}
+
+// Cost by issue category from Ops tickets
+export function opsCostByCategory(
+  tickets: OpsTicket[],
+  shippingFilter: ShippingCategory[] = []
+): { category: string; count: number; totalCost: number; avgCost: number }[] {
+  const groups: Record<string, { count: number; totalCost: number }> = {};
+  for (const t of tickets) {
+    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
+    const cat = classifyIssueType(t.issueType);
+    if (!groups[cat]) groups[cat] = { count: 0, totalCost: 0 };
+    groups[cat].count += 1;
+    groups[cat].totalCost += estimateOpsCost(t.resolution);
+  }
+  return Object.entries(groups)
+    .sort((a, b) => b[1].totalCost - a[1].totalCost)
+    .map(([category, { count, totalCost }]) => ({
+      category,
+      count,
+      totalCost,
+      avgCost: count > 0 ? totalCost / count : 0,
+    }));
+}
+
+// Weekly ops issue volume, split by shipping vs. non-shipping
+export function weeklyOpsVolume(
+  tickets: OpsTicket[],
+  shippingFilter: ShippingCategory[] = []
+): { week: string; arrivedWarm: number; delayed: number; lostInTransit: number; other: number; total: number }[] {
+  const weeks: Record<string, { arrivedWarm: number; delayed: number; lostInTransit: number; other: number }> = {};
+
+  for (const t of tickets) {
+    if (!t.date) continue;
+    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
+
+    const d = new Date(t.date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d);
+    monday.setDate(diff);
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.toISOString().slice(0, 10);
+
+    if (!weeks[key]) weeks[key] = { arrivedWarm: 0, delayed: 0, lostInTransit: 0, other: 0 };
+    const cat = classifyIssueType(t.issueType);
+    if (cat === "Arrived Warm") weeks[key].arrivedWarm += 1;
+    else if (cat === "Delayed in Transit") weeks[key].delayed += 1;
+    else if (cat === "Lost in Transit") weeks[key].lostInTransit += 1;
+    else weeks[key].other += 1;
+  }
+
+  return Object.entries(weeks)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([week, counts]) => ({
+      week,
+      ...counts,
+      total: counts.arrivedWarm + counts.delayed + counts.lostInTransit + counts.other,
+    }));
+}
+
+// Rolling N-week average for cost-per-order trend
+export function withRollingAvg(
+  points: WeeklyCostPoint[],
+  n = 4
+): (WeeklyCostPoint & { rollingAvg: number | null })[] {
+  return points.map((p, i) => {
+    const window = points.slice(Math.max(0, i - n + 1), i + 1).filter((x) => x.costPerOrder > 0);
+    const rollingAvg =
+      window.length >= 2
+        ? window.reduce((s, x) => s + x.costPerOrder, 0) / window.length
+        : null;
+    return { ...p, rollingAvg };
+  });
+}
+
+// KPIs for Kurt's dashboard
+export function costKpis(points: WeeklyCostPoint[], tickets: OpsTicket[]) {
+  const nonZero = points.filter((p) => p.costPerOrder > 0);
+  const latest = nonZero[nonZero.length - 1];
+  const last4 = nonZero.slice(-4);
+  const avg4w = last4.length > 0
+    ? last4.reduce((s, p) => s + p.costPerOrder, 0) / last4.length
+    : 0;
+  const periodAvg = nonZero.length > 0
+    ? nonZero.reduce((s, p) => s + p.costPerOrder, 0) / nonZero.length
+    : 0;
+  const periodPeak = nonZero.length > 0 ? Math.max(...nonZero.map((p) => p.costPerOrder)) : 0;
+  const periodLow = nonZero.length > 0 ? Math.min(...nonZero.map((p) => p.costPerOrder)) : 0;
+  const totalIssues = tickets.length;
+  return { latest: latest?.costPerOrder ?? 0, latestLabel: latest?.weekLabel ?? "—", avg4w, periodAvg, periodPeak, periodLow, totalIssues };
+}
+
+// ── Shipments aggregation ────────────────────────────────────────────────────
+// shipments.csv has mixed shape: some weeks are aggregate rows (Total=1374),
+// others are expanded per-shipment rows (Total=1 each, many duplicates).
+// SUM by week works for both — single-row weeks sum to themselves; multi-row
+// weeks of "1"s sum to the actual shipment count.
+export function aggregateShipmentsByWeek(
+  shipments: ShipmentWeek[]
+): { weekStart: Date; weekEnd: Date; total: number }[] {
+  const byWeek: Record<string, { weekStart: Date; weekEnd: Date; total: number }> = {};
+  for (const s of shipments) {
+    const key = s.weekStart.toISOString().slice(0, 10);
+    if (!byWeek[key]) {
+      byWeek[key] = { weekStart: s.weekStart, weekEnd: s.weekEnd, total: 0 };
+    }
+    byWeek[key].total += s.total;
+  }
+  return Object.values(byWeek).sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime());
+}
+
+// ── Weekly issues + orders (paired bars) ──────────────────────────────────────
+export function weeklyIssuesAndOrders(
+  tickets: OpsTicket[],
+  shipments: ShipmentWeek[],
+  shippingFilter: ShippingCategory[] = []
+): { week: string; weekLabel: string; issues: number; orders: number; ratePer1k: number }[] {
+  const orders = aggregateShipmentsByWeek(shipments);
+  const orderByWeek: Record<string, number> = {};
+  for (const o of orders) {
+    orderByWeek[o.weekStart.toISOString().slice(0, 10)] = o.total;
+  }
+
+  const issuesByWeek: Record<string, number> = {};
+  for (const t of tickets) {
+    if (!t.date) continue;
+    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
+    const d = new Date(t.date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d);
+    monday.setDate(diff);
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.toISOString().slice(0, 10);
+    issuesByWeek[key] = (issuesByWeek[key] ?? 0) + 1;
+  }
+
+  const allWeeks = new Set([...Object.keys(orderByWeek), ...Object.keys(issuesByWeek)]);
+  const rows = Array.from(allWeeks)
+    .sort()
+    .map((week) => {
+      const issues = issuesByWeek[week] ?? 0;
+      const ord = orderByWeek[week] ?? 0;
+      const d = new Date(week + "T12:00:00Z");
+      const weekLabel = `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+      return {
+        week,
+        weekLabel,
+        issues,
+        orders: ord,
+        ratePer1k: ord > 0 ? (issues / ord) * 1000 : 0,
+      };
+    });
+
+  // Trim trailing partial weeks: any week with < 50% of the prior 4-week
+  // median order count is treated as a mid-export cutoff and dropped.
+  while (rows.length >= 5) {
+    const last = rows[rows.length - 1];
+    const prior = rows.slice(-5, -1).map((r) => r.orders).sort((a, b) => a - b);
+    const median = (prior[1] + prior[2]) / 2;
+    if (median > 0 && last.orders < 0.5 * median) {
+      rows.pop();
+    } else {
+      break;
+    }
+  }
+  return rows;
+}
+
+// ── Avg box cost impact ───────────────────────────────────────────────────────
+// Total resolution $ ÷ total orders for the period = $ per box added by issues.
+// Returns current period and prior period for delta.
+export function boxCostImpact(
+  tickets: OpsTicket[],
+  shipments: ShipmentWeek[],
+  shippingFilter: ShippingCategory[] = []
+): { currentImpact: number; priorImpact: number; totalIssueCost: number; totalOrders: number } {
+  const orders = aggregateShipmentsByWeek(shipments);
+  if (orders.length === 0) {
+    return { currentImpact: 0, priorImpact: 0, totalIssueCost: 0, totalOrders: 0 };
+  }
+
+  const totalOrders = orders.reduce((s, o) => s + o.total, 0);
+  let totalIssueCost = 0;
+  for (const t of tickets) {
+    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
+    totalIssueCost += estimateOpsCost(t.resolution);
+  }
+  const currentImpact = totalOrders > 0 ? totalIssueCost / totalOrders : 0;
+
+  // Prior period = first half, current = second half
+  const mid = Math.floor(orders.length / 2);
+  const cutoff = orders[mid]?.weekStart;
+  if (!cutoff) return { currentImpact, priorImpact: 0, totalIssueCost, totalOrders };
+
+  let priorOrders = 0, priorCost = 0;
+  for (const o of orders.slice(0, mid)) priorOrders += o.total;
+  for (const t of tickets) {
+    if (!t.date || t.date >= cutoff) continue;
+    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
+    priorCost += estimateOpsCost(t.resolution);
+  }
+  const priorImpact = priorOrders > 0 ? priorCost / priorOrders : 0;
+
+  return { currentImpact, priorImpact, totalIssueCost, totalOrders };
 }
 
 // ── KPI summaries ─────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 import Papa from "papaparse";
 import { CSV_URLS, CACHE_TTL_MS } from "./config";
-import type { FoodSafetyTicket, OpsTicket, CostLookupRow, ShipmentWeek } from "./types";
+import type { FoodSafetyTicket, OpsTicket, CostLookupRow, ShipmentWeek, WeeklyCostPoint } from "./types";
 import { parseResolutionCost } from "./transforms";
 
 interface CacheEntry<T> {
@@ -37,20 +37,14 @@ function str(v: string | null | undefined): string | null {
 
 function num(v: string | null | undefined): number | null {
   if (v === null || v === undefined) return null;
-  const n = parseFloat(String(v).replace(/[^0-9.]/g, ""));
+  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ""));
   return isNaN(n) ? null : n;
 }
 
-// UPDATE_Food Safety columns (fixed indices, never offset):
-// [0] ID Number  [1] Shopify Order Number  [2] Date of Member Complaint
-// [3] Customer Name  [4] Product SKU In Question  [5] Cheese Paper or Vac Seal
-// [6] Fulfillment Center  [7] Carrier Tracking Number  [8] Perceived Concern
-// [9] Gorgias Link  [10] CEO Comments  [11] Direction
-// [12] Corrective Action  [13] Date Resolved
+// Food Safety: fixed column indices, no offset detection
 export async function fetchFoodSafety(): Promise<FoodSafetyTicket[]> {
   const rows = await fetchCsv(CSV_URLS.foodSafety);
   return rows.slice(1).flatMap((r) => {
-    // Skip rows that are entirely empty or look like section headers
     if (!str(r[2]) && !str(r[1])) return [];
     const correctiveAction = str(r[12]);
     const dateResolvedRaw = str(r[13]);
@@ -79,35 +73,78 @@ export async function fetchFoodSafety(): Promise<FoodSafetyTicket[]> {
   });
 }
 
+// Ops Tickets
 export async function fetchOpsTickets(): Promise<OpsTicket[]> {
   const rows = await fetchCsv(CSV_URLS.opsTickets);
-  return rows.slice(1).map((r) => ({
-    date: parseDate(str(r[0])),
-    contactReason: str(r[1]),
-    orderNumber: str(r[2]),
-    gorgiasLink: str(r[3]),
-    carrier: str(r[4]),
-    destinationState: str(r[5]),
-    fulfillmentCenter: str(r[6]),
-    issueType: str(r[7]),
-    resolution: str(r[8]),
-    comment: str(r[9]),
-  }));
+  return rows.slice(1).flatMap((r) => {
+    if (!str(r[0])) return [];
+    return [{
+      date: parseDate(str(r[0])),
+      contactReason: str(r[1]),
+      orderNumber: str(r[2]),
+      gorgiasLink: str(r[3]),
+      carrier: str(r[4]),
+      destinationState: str(r[5]),
+      fulfillmentCenter: str(r[6]),
+      issueType: str(r[7]),
+      resolution: str(r[8]),
+      comment: str(r[9]),
+    }];
+  });
 }
 
+// Cost lookup table (resolution type → unit $)
 export async function fetchCostLookup(): Promise<CostLookupRow[]> {
   const rows = await fetchCsv(CSV_URLS.costOfIssues);
   const results: CostLookupRow[] = [];
   for (const r of rows.slice(1)) {
     const resolution = str(r[0]);
     const cost = num(r[1]);
-    if (resolution && cost !== null && cost > 0 && !resolution.match(/^\d+\//)) {
+    if (resolution && cost !== null && cost > 0 && !resolution.match(/^\d+\//) && resolution !== "Week") {
       results.push({ resolution, unitCost: cost });
     }
   }
   return results;
 }
 
+// Weekly cost-per-order — pre-calculated section in Cost of Issues sheet.
+// Year inferred from month sequence: May 2025 → Mar 2026.
+export async function fetchWeeklyCostPerOrder(): Promise<WeeklyCostPoint[]> {
+  const rows = await fetchCsv(CSV_URLS.costOfIssues);
+
+  // Find the "Week | Cost per Order" header row
+  const headerIdx = rows.findIndex((r) => str(r[0]) === "Week" && str(r[1]) === "Cost per Order");
+  if (headerIdx === -1) return [];
+
+  const results: WeeklyCostPoint[] = [];
+  let year = 2025;
+  let prevMonth = -1;
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const label = str(r[0]);
+    const costRaw = num(r[1]);
+    if (!label || costRaw === null) continue;
+    if (label === "Summary") break;
+
+    // Parse "M/D - M/D"
+    const m = label.match(/^(\d{1,2})\/(\d{1,2})/);
+    if (!m) continue;
+    const month = parseInt(m[1]);
+    const day = parseInt(m[2]);
+
+    // Year flip when month resets (Dec → Jan)
+    if (prevMonth > 0 && month < prevMonth && month <= 3) year = 2026;
+    prevMonth = month;
+
+    const weekStart = new Date(year, month - 1, day);
+    results.push({ weekLabel: label, weekStart, costPerOrder: costRaw });
+  }
+
+  return results;
+}
+
+// Shipments (weekly volume)
 export async function fetchShipments(): Promise<ShipmentWeek[]> {
   const rows = await fetchCsv(CSV_URLS.shipments);
   return rows.slice(1).flatMap((r) => {
