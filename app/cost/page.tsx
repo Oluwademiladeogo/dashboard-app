@@ -10,7 +10,7 @@ import {
   SHIPPING_CATEGORIES,
   boxCostImpact,
   costKpis,
-  isInCurrentWeek,
+  detectPartialWeeksFromShipments,
   opsCostByCategory,
   weeklyIssuesAndOrders,
   withRollingAvg,
@@ -557,34 +557,31 @@ export default function CostPage() {
     [weeklyCost, dateFrom, dateTo]
   );
 
-  // "Complete" datasets exclude the in-progress (current calendar) week —
-  // used for KPIs, deltas, totals, and the byType table.
-  const completeOps = useMemo(
-    () => filteredOps.filter((t) => !isInCurrentWeek(t.date)),
-    [filteredOps]
-  );
-  const completeShipments = useMemo(
-    () => filteredShipments.filter((s) => !isInCurrentWeek(s.weekStart)),
+  // Detect partial weeks once from shipment data — used for all transforms.
+  const partialWeeks = useMemo(
+    () => detectPartialWeeksFromShipments(filteredShipments),
     [filteredShipments]
   );
-  const completeWeeklyCost = useMemo(
-    () => filteredWeeklyCost.filter((p) => !isInCurrentWeek(p.weekStart)),
-    [filteredWeeklyCost]
-  );
 
-  // Charts include the in-progress week (visually distinguished).
-  const trend = useMemo(() => withRollingAvg(filteredWeeklyCost, 4), [filteredWeeklyCost]);
+  // Charts include partial weeks (visually distinguished) — pass partial set for marking.
+  const trend = useMemo(
+    () => withRollingAvg(filteredWeeklyCost, 4, partialWeeks),
+    [filteredWeeklyCost, partialWeeks]
+  );
   const issuesOrders = useMemo(
-    () => weeklyIssuesAndOrders(filteredOps, filteredShipments, activeShipping),
-    [filteredOps, filteredShipments, activeShipping]
+    () => weeklyIssuesAndOrders(filteredOps, filteredShipments, activeShipping, partialWeeks),
+    [filteredOps, filteredShipments, activeShipping, partialWeeks]
   );
 
-  // KPIs / aggregates use complete data only.
-  const kpis = useMemo(() => costKpis(completeWeeklyCost, completeOps), [completeWeeklyCost, completeOps]);
-  const byType = useMemo(() => opsCostByCategory(completeOps, activeShipping), [completeOps, activeShipping]);
+  // KPIs / aggregates use partial weeks to filter out incomplete data.
+  const kpis = useMemo(
+    () => costKpis(filteredWeeklyCost, filteredOps, partialWeeks),
+    [filteredWeeklyCost, filteredOps, partialWeeks]
+  );
+  const byType = useMemo(() => opsCostByCategory(filteredOps, activeShipping), [filteredOps, activeShipping]);
   const impact = useMemo(
-    () => boxCostImpact(completeOps, completeShipments, activeShipping),
-    [completeOps, completeShipments, activeShipping]
+    () => boxCostImpact(filteredOps, filteredShipments, activeShipping, partialWeeks),
+    [filteredOps, filteredShipments, activeShipping, partialWeeks]
   );
 
   if (loading) {
@@ -603,7 +600,10 @@ export default function CostPage() {
   const impactDelta = impact.currentImpact - impact.priorImpact;
   const impactDeltaPct =
     impact.priorImpact > 0 ? (impactDelta / impact.priorImpact) * 100 : 0;
-  const trendDelta = kpis.latest - kpis.avg4w;
+  // 4-wk avg delta: compare last 4 weeks to prior 4 weeks
+  const avg4wDelta = kpis.avg4w - kpis.prior4wAvg;
+  // Latest delta: compare latest week to prior 4-week avg
+  const latestDelta = kpis.latest - kpis.prior4wAvg;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -623,7 +623,7 @@ export default function CostPage() {
         </div>
 
         <p className="text-[11px] text-slate-500 -mt-2">
-          The current calendar week is shown on charts in grey/dashed (labelled <em>in progress</em>) but excluded from KPIs, deltas, and totals.
+          Trailing weeks with abnormally low order counts (partial weeks) are shown on charts in grey/dashed (labelled <em>in progress</em>) but excluded from KPIs, deltas, and totals.
         </p>
 
         {/* Filters */}
@@ -678,25 +678,29 @@ export default function CostPage() {
           <StatCard
             label="Latest issue cost / order"
             value={fmtUsd(kpis.latest, 2)}
-            sub={`Week of ${kpis.latestLabel}`}
-            accent="blue"
+            sub={
+              kpis.prior4wAvg > 0
+                ? `${latestDelta < 0 ? "↓" : "↑"} ${fmtUsd(Math.abs(latestDelta), 2)} vs prior 4-wk avg`
+                : `Week of ${kpis.latestLabel}`
+            }
+            accent={latestDelta < 0 ? "green" : "amber"}
           />
           <StatCard
             label="4-wk avg"
             value={fmtUsd(kpis.avg4w, 2)}
             sub={
-              trendDelta < 0
-                ? `↓ ${fmtUsd(Math.abs(trendDelta), 2)} vs latest`
-                : `↑ ${fmtUsd(trendDelta, 2)} vs latest`
+              kpis.prior4wAvg > 0
+                ? `${avg4wDelta < 0 ? "↓" : "↑"} ${fmtUsd(Math.abs(avg4wDelta), 2)} vs prior 4-wk avg`
+                : "4-week rolling average"
             }
-            accent={trendDelta < 0 ? "green" : "amber"}
+            accent={avg4wDelta < 0 ? "green" : "amber"}
           />
           <StatCard
             label="Box cost impact"
             value={fmtUsd(impact.currentImpact, 2)}
             sub={
               impact.priorImpact > 0
-                ? `${impactDelta >= 0 ? "↑" : "↓"} ${fmt2(Math.abs(impactDeltaPct))}% vs prior half`
+                ? `${impactDelta >= 0 ? "↑" : "↓"} ${fmt2(Math.abs(impactDeltaPct))}% vs prior 4-wk`
                 : "issue $ ÷ orders"
             }
             accent={impactDelta < 0 ? "green" : "amber"}

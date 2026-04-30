@@ -301,6 +301,66 @@ export function isInCurrentWeek(d: Date | null): boolean {
   return d >= monday && d < nextMonday;
 }
 
+// Detect partial weeks from data shape, not clock.
+// A week is "partial" if its orders are < threshold % of trailing median.
+// This handles stale data exports that end mid-week.
+type WeekPoint = { weekStart: Date; orders: number };
+
+function calculateTrailingMedian(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+export function detectPartialWeeksFromData(
+  points: WeekPoint[],
+  thresholdRatio = 0.5,
+  minWindow = 4
+): Set<string> {
+  const partialWeeks = new Set<string>();
+  if (points.length < minWindow + 1) return partialWeeks;
+
+  // Sort by date ascending to ensure correct ordering
+  const sorted = [...points].sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime());
+
+  // Start from the most recent week and work backwards
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const point = sorted[i];
+    // Get trailing window (previous minWindow weeks before this one)
+    const trailingStart = Math.max(0, i - minWindow);
+    const trailing = sorted.slice(trailingStart, i);
+
+    if (trailing.length < minWindow) break; // Not enough history
+
+    const trailingOrders = trailing.map((p) => p.orders);
+    const medianOrders = calculateTrailingMedian(trailingOrders);
+
+    // Also check if this week is the current calendar week
+    const isCurrentCalendarWeek = isInCurrentWeek(point.weekStart);
+
+    // Mark as partial if orders are abnormally low OR it's the current calendar week
+    if (point.orders < medianOrders * thresholdRatio || isCurrentCalendarWeek) {
+      partialWeeks.add(point.weekStart.toISOString().slice(0, 10));
+    } else {
+      // Once we hit a complete week, stop looking (earlier weeks are assumed complete)
+      break;
+    }
+  }
+
+  return partialWeeks;
+}
+
+// Detect partial weeks from shipment data — can be passed to other transforms
+export function detectPartialWeeksFromShipments(shipments: ShipmentWeek[]): Set<string> {
+  const points: WeekPoint[] = aggregateShipmentsByWeek(shipments).map((s) => ({
+    weekStart: s.weekStart,
+    orders: s.total,
+  }));
+  return detectPartialWeeksFromData(points);
+}
+
 export const SHIPPING_CATEGORIES: ShippingCategory[] = [
   "Arrived Warm",
   "Delayed in Transit",
@@ -408,17 +468,23 @@ export function weeklyOpsVolume(
 }
 
 // Rolling N-week average for cost-per-order trend.
-// Excludes the current (in-progress) week from the rolling window since its
-// cost figure is incomplete.
+// Excludes partial (in-progress) weeks from the rolling window since their
+// cost figures are incomplete.
 export function withRollingAvg(
   points: WeeklyCostPoint[],
-  n = 4
+  n = 4,
+  partialWeeks?: Set<string>
 ): (WeeklyCostPoint & { rollingAvg: number | null; isPartial: boolean; weekLabelDisplay: string })[] {
+  const partialSet = partialWeeks ?? new Set<string>();
+
   return points.map((p, i) => {
-    const isPartial = isInCurrentWeek(p.weekStart);
+    const isPartial = partialSet.has(p.weekStart.toISOString().slice(0, 10));
     const window = points
       .slice(Math.max(0, i - n + 1), i + 1)
-      .filter((x) => x.costPerOrder > 0 && !isInCurrentWeek(x.weekStart));
+      .filter((x) => {
+        const xKey = x.weekStart.toISOString().slice(0, 10);
+        return x.costPerOrder > 0 && !partialSet.has(xKey);
+      });
     const rollingAvg =
       window.length >= 2
         ? window.reduce((s, x) => s + x.costPerOrder, 0) / window.length
@@ -429,20 +495,51 @@ export function withRollingAvg(
 }
 
 // KPIs for Kurt's dashboard
-export function costKpis(points: WeeklyCostPoint[], tickets: OpsTicket[]) {
+// Uses complete weeks only (no partial/in-progress weeks) for clean metrics.
+export function costKpis(
+  points: WeeklyCostPoint[],
+  tickets: OpsTicket[],
+  partialWeeks?: Set<string>
+) {
   const nonZero = points.filter((p) => p.costPerOrder > 0);
-  const latest = nonZero[nonZero.length - 1];
-  const last4 = nonZero.slice(-4);
-  const avg4w = last4.length > 0
-    ? last4.reduce((s, p) => s + p.costPerOrder, 0) / last4.length
+
+  const partialSet = partialWeeks ?? new Set<string>();
+
+  // Filter to complete weeks only for KPI calculations
+  const completeWeeks = nonZero.filter(
+    (p) => !partialSet.has(p.weekStart.toISOString().slice(0, 10))
+  );
+
+  // Latest complete week (for KPIs and deltas)
+  const latest = completeWeeks[completeWeeks.length - 1];
+  const latest4 = completeWeeks.slice(-4);
+  const avg4w = latest4.length > 0
+    ? latest4.reduce((s, p) => s + p.costPerOrder, 0) / latest4.length
     : 0;
-  const periodAvg = nonZero.length > 0
-    ? nonZero.reduce((s, p) => s + p.costPerOrder, 0) / nonZero.length
+
+  // Prior 4-week avg (weeks 5-8 back from latest) for delta comparison
+  const prior4 = completeWeeks.slice(-8, -4);
+  const prior4wAvg = prior4.length > 0
+    ? prior4.reduce((s, p) => s + p.costPerOrder, 0) / prior4.length
     : 0;
-  const periodPeak = nonZero.length > 0 ? Math.max(...nonZero.map((p) => p.costPerOrder)) : 0;
-  const periodLow = nonZero.length > 0 ? Math.min(...nonZero.map((p) => p.costPerOrder)) : 0;
+
+  const periodAvg = completeWeeks.length > 0
+    ? completeWeeks.reduce((s, p) => s + p.costPerOrder, 0) / completeWeeks.length
+    : 0;
+  const periodPeak = completeWeeks.length > 0 ? Math.max(...completeWeeks.map((p) => p.costPerOrder)) : 0;
+  const periodLow = completeWeeks.length > 0 ? Math.min(...completeWeeks.map((p) => p.costPerOrder)) : 0;
   const totalIssues = tickets.length;
-  return { latest: latest?.costPerOrder ?? 0, latestLabel: latest?.weekLabel ?? "—", avg4w, periodAvg, periodPeak, periodLow, totalIssues };
+
+  return {
+    latest: latest?.costPerOrder ?? 0,
+    latestLabel: latest?.weekLabel ?? "—",
+    avg4w,
+    prior4wAvg,
+    periodAvg,
+    periodPeak,
+    periodLow,
+    totalIssues,
+  };
 }
 
 // ── Shipments aggregation ────────────────────────────────────────────────────
@@ -468,10 +565,12 @@ export function aggregateShipmentsByWeek(
 export function weeklyIssuesAndOrders(
   tickets: OpsTicket[],
   shipments: ShipmentWeek[],
-  shippingFilter: ShippingCategory[] = []
+  shippingFilter: ShippingCategory[] = [],
+  partialWeeks?: Set<string>
 ): {
   week: string;
   weekLabel: string;
+  weekStart: Date;
   issues: number;
   orders: number;
   ratePer1k: number | null;
@@ -498,63 +597,110 @@ export function weeklyIssuesAndOrders(
   }
 
   const allWeeks = new Set([...Object.keys(orderByWeek), ...Object.keys(issuesByWeek)]);
-  const currentMondayKey = weekStartMonday().toISOString().slice(0, 10);
-  return Array.from(allWeeks)
+
+  // Detect partial weeks if not provided
+  let partialSet: Set<string>;
+  if (partialWeeks) {
+    partialSet = partialWeeks;
+  } else {
+    // Build detection input for partial week detection
+    const weekPoints: WeekPoint[] = Array.from(allWeeks)
+      .sort()
+      .map((week) => ({
+        weekStart: new Date(week + "T12:00:00Z"),
+        orders: orderByWeek[week] ?? 0,
+      }));
+    partialSet = detectPartialWeeksFromData(weekPoints);
+  }
+
+  const weekPoints = Array.from(allWeeks)
     .sort()
-    .map((week) => {
-      const issues = issuesByWeek[week] ?? 0;
-      const ord = orderByWeek[week] ?? 0;
-      const d = new Date(week + "T12:00:00Z");
-      const isPartial = week === currentMondayKey;
-      const weekLabel = isPartial
-        ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} (in progress)`
-        : `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-      return {
-        week,
-        weekLabel,
-        issues,
-        orders: ord,
-        // Gap the rate line on the partial week — denominator is unreliable.
-        ratePer1k: isPartial ? null : ord > 0 ? (issues / ord) * 1000 : 0,
-        isPartial,
-      };
-    });
+    .map((week) => ({
+      weekStart: new Date(week + "T12:00:00Z"),
+      orders: orderByWeek[week] ?? 0,
+    }));
+
+  return weekPoints.map((wp) => {
+    const week = wp.weekStart.toISOString().slice(0, 10);
+    const issues = issuesByWeek[week] ?? 0;
+    const ord = wp.orders;
+    const d = wp.weekStart;
+    const isPartial = partialSet.has(week);
+    const weekLabel = isPartial
+      ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} (in progress)`
+      : `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+    return {
+      week,
+      weekLabel,
+      weekStart: wp.weekStart,
+      issues,
+      orders: ord,
+      // Gap the rate line on the partial week — denominator is unreliable.
+      ratePer1k: isPartial ? null : ord > 0 ? (issues / ord) * 1000 : 0,
+      isPartial,
+    };
+  });
 }
 
 // ── Avg box cost impact ───────────────────────────────────────────────────────
 // Total resolution $ ÷ total orders for the period = $ per box added by issues.
 // Returns current period and prior period for delta.
+// Excludes partial weeks from both current and prior calculations.
 export function boxCostImpact(
   tickets: OpsTicket[],
   shipments: ShipmentWeek[],
-  shippingFilter: ShippingCategory[] = []
+  shippingFilter: ShippingCategory[] = [],
+  partialWeeks?: Set<string>
 ): { currentImpact: number; priorImpact: number; totalIssueCost: number; totalOrders: number } {
   const orders = aggregateShipmentsByWeek(shipments);
   if (orders.length === 0) {
     return { currentImpact: 0, priorImpact: 0, totalIssueCost: 0, totalOrders: 0 };
   }
 
-  const totalOrders = orders.reduce((s, o) => s + o.total, 0);
-  let totalIssueCost = 0;
+  const partialSet = partialWeeks ?? detectPartialWeeksFromShipments(shipments);
+
+  // Filter to complete weeks only
+  const completeOrders = orders.filter(
+    (o) => !partialSet.has(o.weekStart.toISOString().slice(0, 10))
+  );
+
+  // Split into current (recent) and prior periods
+  // Current = last 4 complete weeks, Prior = 4 weeks before that
+  const currentOrdersSlice = completeOrders.slice(-4);
+  const priorOrdersSlice = completeOrders.slice(-8, -4);
+
+  const currentOrders = currentOrdersSlice.reduce((s, o) => s + o.total, 0);
+  const priorOrders = priorOrdersSlice.reduce((s, o) => s + o.total, 0);
+
+  // Get cutoff dates for ticket filtering
+  const currentCutoff = currentOrdersSlice[0]?.weekStart;
+  const priorCutoff = priorOrdersSlice[0]?.weekStart;
+  const priorEnd = priorOrdersSlice[priorOrdersSlice.length - 1]?.weekEnd;
+
+  let currentIssueCost = 0;
+  let priorIssueCost = 0;
+
   for (const t of tickets) {
     if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
-    totalIssueCost += estimateOpsCost(t.resolution);
-  }
-  const currentImpact = totalOrders > 0 ? totalIssueCost / totalOrders : 0;
+    const cost = estimateOpsCost(t.resolution);
 
-  // Prior period = first half, current = second half
-  const mid = Math.floor(orders.length / 2);
-  const cutoff = orders[mid]?.weekStart;
-  if (!cutoff) return { currentImpact, priorImpact: 0, totalIssueCost, totalOrders };
+    // Current period: within current window
+    if (currentCutoff && t.date && t.date >= currentCutoff) {
+      currentIssueCost += cost;
+    }
 
-  let priorOrders = 0, priorCost = 0;
-  for (const o of orders.slice(0, mid)) priorOrders += o.total;
-  for (const t of tickets) {
-    if (!t.date || t.date >= cutoff) continue;
-    if (!matchesShippingFilter(t.issueType, shippingFilter)) continue;
-    priorCost += estimateOpsCost(t.resolution);
+    // Prior period: within prior window
+    if (priorCutoff && priorEnd && t.date && t.date >= priorCutoff && t.date <= priorEnd) {
+      priorIssueCost += cost;
+    }
   }
-  const priorImpact = priorOrders > 0 ? priorCost / priorOrders : 0;
+
+  const currentImpact = currentOrders > 0 ? currentIssueCost / currentOrders : 0;
+  const priorImpact = priorOrders > 0 ? priorIssueCost / priorOrders : 0;
+
+  // Total numbers for display (current period only)
+  const totalIssueCost = currentIssueCost;
+  const totalOrders = currentOrders;
 
   return { currentImpact, priorImpact, totalIssueCost, totalOrders };
 }
