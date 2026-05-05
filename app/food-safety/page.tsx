@@ -146,6 +146,32 @@ function PeriodSelector({
 }
 
 // ── Ticket table ──────────────────────────────────────────────────────────────
+function TicketTh({
+  label,
+  field,
+  w,
+  sortField,
+  sortAsc,
+  onSort,
+}: {
+  label: string;
+  field: keyof FoodSafetyTicket;
+  w?: string;
+  sortField: keyof FoodSafetyTicket;
+  sortAsc: boolean;
+  onSort: (field: keyof FoodSafetyTicket) => void;
+}) {
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={`px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider cursor-pointer whitespace-nowrap select-none hover:text-slate-800 transition-colors ${w ?? ""}`}
+    >
+      {label}
+      {sortField === field && <span className="ml-1 text-blue-500">{sortAsc ? "↑" : "↓"}</span>}
+    </th>
+  );
+}
+
 function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<keyof FoodSafetyTicket>("dateOfComplaint");
@@ -193,24 +219,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
   }
 
-  const Th = ({
-    label,
-    field,
-    w,
-  }: {
-    label: string;
-    field: keyof FoodSafetyTicket;
-    w?: string;
-  }) => (
-    <th
-      onClick={() => handleSort(field)}
-      className={`px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider cursor-pointer whitespace-nowrap select-none hover:text-slate-800 transition-colors ${w ?? ""}`}
-    >
-      {label}
-      {sortField === field && <span className="ml-1 text-blue-500">{sortAsc ? "↑" : "↓"}</span>}
-    </th>
-  );
-
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -243,15 +251,43 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              <Th label="Shopify #" field="shopifyOrderNumber" w="w-24" />
-              <Th label="Date" field="dateOfComplaint" w="w-24" />
-              <Th label="Customer" field="customerName" />
-              <Th label="SKU" field="skuInQuestion" />
-              <Th label="Packaging" field="packagingType" />
-              <Th label="Concern" field="perceivedConcern" />
-              <Th label="Action" field="correctiveAction" />
-              <Th label="Cost" field="resolutionCost" w="w-16" />
-              <Th label="Status" field="isResolved" w="w-20" />
+              <TicketTh
+                label="Shopify #"
+                field="shopifyOrderNumber"
+                w="w-24"
+                sortField={sortField}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <TicketTh
+                label="Date"
+                field="dateOfComplaint"
+                w="w-24"
+                sortField={sortField}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <TicketTh label="Customer" field="customerName" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="SKU" field="skuInQuestion" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Packaging" field="packagingType" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Concern" field="perceivedConcern" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Action" field="correctiveAction" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh
+                label="Cost"
+                field="resolutionCost"
+                w="w-16"
+                sortField={sortField}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <TicketTh
+                label="Status"
+                field="isResolved"
+                w="w-20"
+                sortField={sortField}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">

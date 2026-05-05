@@ -19,7 +19,6 @@ import type { OpsTicket, ShipmentWeek, ShippingCategory, WeeklyCostPoint } from 
 import { useFilterStore } from "@/lib/store";
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,

@@ -45,13 +45,30 @@ const colorClasses: Record<string, { bg: string; text: string; border: string; h
 
 export default function Home() {
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [summary, setSummary] = useState<{
+    totalTickets: number;
+    openTickets: number;
+    closedTickets: number;
+    topCategory: string;
+    latestCreatedAt: string | null;
+  } | null>(null);
 
   useEffect(() => {
-    // Try to get last updated from localStorage (set by the dashboard pages)
-    const stored = localStorage.getItem("dashboard-last-updated");
-    if (stored) {
-      setLastUpdated(stored);
-    }
+    fetch("/api/dashboard-summary", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setSummary(data);
+        if (data.latestCreatedAt) {
+          const d = new Date(data.latestCreatedAt);
+          if (!Number.isNaN(d.getTime())) {
+            setLastUpdated(d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }));
+          }
+        }
+      })
+      .catch(() => {
+        setSummary(null);
+      });
   }, []);
 
   return (
@@ -83,7 +100,7 @@ export default function Home() {
           <div className="text-sm text-blue-800">
             <p className="font-medium">Data Source</p>
             <p className="text-blue-700/80">
-              Data refreshes from Google Sheets every 15 minutes. The Food Safety and Cost dashboards pull from your published CSV exports.
+              Data is read directly from the local SQLite warehouse (`data.db`) via dashboard API routes.
             </p>
           </div>
         </div>
@@ -124,24 +141,24 @@ export default function Home() {
         {/* Quick stats placeholder */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 mb-1">Food Safety Tickets</p>
-            <p className="text-2xl font-bold text-slate-900">169</p>
-            <p className="text-xs text-slate-400 mt-1">All time</p>
+            <p className="text-xs text-slate-500 mb-1">Total Tickets</p>
+            <p className="text-2xl font-bold text-slate-900">{summary ? summary.totalTickets.toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-400 mt-1">Non-spam records</p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 mb-1">Total Resolution Cost</p>
-            <p className="text-2xl font-bold text-slate-900">~$2,400</p>
-            <p className="text-xs text-slate-400 mt-1">Estimated</p>
+            <p className="text-xs text-slate-500 mb-1">Open Tickets</p>
+            <p className="text-2xl font-bold text-slate-900">{summary ? summary.openTickets.toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-400 mt-1">Current workload</p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 mb-1">Top Concern</p>
-            <p className="text-2xl font-bold text-slate-900">Mold</p>
-            <p className="text-xs text-slate-400 mt-1">Most frequent</p>
+            <p className="text-xs text-slate-500 mb-1">Top Issue Category</p>
+            <p className="text-2xl font-bold text-slate-900 truncate">{summary ? summary.topCategory : "—"}</p>
+            <p className="text-xs text-slate-400 mt-1">Most frequent tag/category</p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <p className="text-xs text-slate-500 mb-1">Data Updated</p>
-            <p className="text-2xl font-bold text-slate-900">Live</p>
-            <p className="text-xs text-slate-400 mt-1">15 min cache</p>
+            <p className="text-2xl font-bold text-slate-900">{lastUpdated || "Live"}</p>
+            <p className="text-xs text-slate-400 mt-1">From latest ticket timestamp</p>
           </div>
         </div>
       </div>
