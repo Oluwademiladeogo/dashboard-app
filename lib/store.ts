@@ -13,31 +13,35 @@ interface FilterStore extends FilterState {
   resetFilters: () => void;
 }
 
-const defaultState: FilterState = {
+const defaultState = (): FilterState => ({
   dateFrom: null,
   dateTo: null,
   fulfillmentCenters: [],
   packagingTypes: [],
   carriers: [],
   destinationStates: [],
-};
+});
 
 export const useFilterStore = create<FilterStore>()(
   persist(
     (set) => ({
-      ...defaultState,
+      ...defaultState(),
       setDateFrom: (d) => set({ dateFrom: d }),
       setDateTo: (d) => set({ dateTo: d }),
       setPackagingTypes: (types) => set({ packagingTypes: types }),
       setCarriers: (carriers) => set({ carriers }),
       setDestinationStates: (states) => set({ destinationStates: states }),
-      resetFilters: () => set(defaultState),
+      resetFilters: () => set(defaultState()),
     }),
     {
-      name: "dashboard-filters-v2",
+      name: "dashboard-filters-v4",
       // Dates don't survive JSON serialisation as Date objects
       storage: {
         getItem: (name) => {
+          // Clear old filter keys
+          if (typeof window !== 'undefined') {
+            ['dashboard-filters-v2', 'dashboard-filters-v3'].forEach(k => localStorage.removeItem(k));
+          }
           const raw = localStorage.getItem(name);
           if (!raw) return null;
           const parsed = JSON.parse(raw);

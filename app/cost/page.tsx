@@ -178,8 +178,7 @@ function CostPerOrderChart({
   periodAvg: number;
   type: TrendType;
 }) {
-  const firstNonZero = data.findIndex((d) => d.costPerOrder > 0);
-  const visible = data.slice(firstNonZero >= 0 ? firstNonZero : 0).map((d) => ({
+  const visible = data.map((d) => ({
     ...d,
     weekLabel: d.weekLabelDisplay ?? d.weekLabel,
     // Split series so the partial point can be styled differently and the
@@ -500,7 +499,7 @@ export default function CostPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeShipping, setActiveShipping] = useState<ShippingCategory[]>([]);
-  const { dateFrom, dateTo, setDateFrom, setDateTo } = useFilterStore();
+  const { } = useFilterStore();
 
   // chart-type toggles
   const [trendType, setTrendType] = useState<TrendType>("line");
@@ -527,34 +526,9 @@ export default function CostPage() {
     );
   };
 
-  const filteredOps = useMemo(
-    () =>
-      ops.filter((t) => {
-        if (!t.date) return false;
-        if (dateFrom && t.date < dateFrom) return false;
-        if (dateTo && t.date > dateTo) return false;
-        return true;
-      }),
-    [ops, dateFrom, dateTo]
-  );
-  const filteredShipments = useMemo(
-    () =>
-      shipments.filter((s) => {
-        if (dateFrom && s.weekEnd < dateFrom) return false;
-        if (dateTo && s.weekStart > dateTo) return false;
-        return true;
-      }),
-    [shipments, dateFrom, dateTo]
-  );
-  const filteredWeeklyCost = useMemo(
-    () =>
-      weeklyCost.filter((p) => {
-        if (dateFrom && p.weekStart < dateFrom) return false;
-        if (dateTo && p.weekStart > dateTo) return false;
-        return true;
-      }),
-    [weeklyCost, dateFrom, dateTo]
-  );
+  const filteredOps = useMemo(() => ops, [ops]);
+  const filteredShipments = useMemo(() => shipments, [shipments]);
+  const filteredWeeklyCost = useMemo(() => weeklyCost, [weeklyCost]);
 
   // Detect partial weeks once from shipment data — used for all transforms.
   const partialWeeks = useMemo(
@@ -627,25 +601,6 @@ export default function CostPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-white border border-slate-200 rounded-lg p-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Date</span>
-            <input
-              type="date"
-              value={dateFrom ? dateFrom.toISOString().slice(0, 10) : ""}
-              onChange={(e) => setDateFrom(e.target.value ? new Date(e.target.value) : null)}
-              className="border border-slate-300 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-            />
-            <span className="text-xs text-slate-400">to</span>
-            <input
-              type="date"
-              value={dateTo ? dateTo.toISOString().slice(0, 10) : ""}
-              onChange={(e) => setDateTo(e.target.value ? new Date(e.target.value) : null)}
-              className="border border-slate-300 rounded-md px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-            />
-          </div>
-
-          <div className="h-4 w-px bg-slate-200 hidden sm:block" />
-
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Shipping issue</span>
             {SHIPPING_CATEGORIES.map((c) => (
@@ -658,13 +613,9 @@ export default function CostPage() {
             ))}
           </div>
 
-          {(activeShipping.length > 0 || dateFrom || dateTo) && (
+          {activeShipping.length > 0 && (
             <button
-              onClick={() => {
-                setActiveShipping([]);
-                setDateFrom(null);
-                setDateTo(null);
-              }}
+              onClick={() => setActiveShipping([])}
               className="ml-auto text-xs text-slate-500 hover:text-slate-800"
             >
               Reset filters

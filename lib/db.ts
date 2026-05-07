@@ -1,6 +1,5 @@
 import mysql from "mysql2/promise";
 
-// DigitalOcean MySQL — credentials from environment
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT) || 25060,
@@ -10,6 +9,9 @@ const pool = mysql.createPool({
   ssl: { rejectUnauthorized: false },
   waitForConnections: true,
   connectionLimit: 5,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  connectTimeout: 10000,
 });
 
 export default pool;

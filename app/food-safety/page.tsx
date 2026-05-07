@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { fetchFoodSafety } from "@/lib/data";
-import { applyFoodSafetyFilters } from "@/lib/filters";
 import {
   foodSafetyKpis,
   skuPareto,
@@ -402,7 +401,15 @@ export default function FoodSafetyPage() {
       });
   }, []);
 
-  const tickets = useMemo(() => applyFoodSafetyFilters(allTickets, filters), [allTickets, filters]);
+  const tickets = useMemo(() => {
+    // No date filtering - show all data
+    return allTickets.filter((t) => {
+      if (filters.packagingTypes.length > 0 && !filters.packagingTypes.some((p) =>
+        (t.packagingType ?? "").toLowerCase().includes(p.toLowerCase())
+      )) return false;
+      return true;
+    });
+  }, [allTickets, filters]);
   const kpis = useMemo(() => foodSafetyKpis(tickets), [tickets]);
   const sku = useMemo(() => skuPareto(tickets, 10), [tickets]);
   const concerns = useMemo(() => concernBreakdown(tickets), [tickets]);

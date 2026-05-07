@@ -49,7 +49,11 @@ export default function HorizontalBar({ data, formatter, color = "#3b82f6" }: Pr
           type="category"
           dataKey="label"
           width={155}
-          tick={{ fontSize: 11, fill: "#475569" }}
+          tick={({ x, y, payload }) => (
+            <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill="#475569">
+              {payload.value.length > 18 ? `${payload.value.slice(0, 18)}…` : payload.value}
+            </text>
+          )}
           axisLine={false}
           tickLine={false}
         />
