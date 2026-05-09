@@ -33,9 +33,16 @@ export async function GET() {
              t.customer_email, t.order_number, t.tags, t.status, t.subject,
              t.order_total_price, t.assignee_email, t.shopify_order_id,
              t.sku_in_question,
-             GROUP_CONCAT(DISTINCT s.sku ORDER BY s.sku SEPARATOR ', ') AS skus
+             GROUP_CONCAT(DISTINCT COALESCE(s.product_name, s.sku) ORDER BY COALESCE(s.product_name, s.sku) SEPARATOR ', ') AS skus
       FROM gorgias_tickets t
       LEFT JOIN shopify_order_skus s ON s.shopify_order_id = t.shopify_order_id
+      WHERE (
+        t.tags LIKE '%spoil%' OR t.tags LIKE '%mold%' OR t.tags LIKE '%expired%'
+        OR t.tags LIKE '%quality%' OR t.tags LIKE '%arrived warm%' OR t.tags LIKE '%contamina%'
+        OR t.tags LIKE '%reship%' OR t.tags LIKE '%Order Issue%'
+        OR t.subject LIKE '%spoil%' OR t.subject LIKE '%mold%' OR t.subject LIKE '%quality%'
+        OR t.subject LIKE '%arrived warm%' OR t.subject LIKE '%expired%'
+      )
       GROUP BY t.ticket_id
       ORDER BY t.ticket_created_at DESC
       LIMIT 500
