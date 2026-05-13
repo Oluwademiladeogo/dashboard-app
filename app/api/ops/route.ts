@@ -1,56 +1,75 @@
 import { NextResponse } from "next/server";
 import pool from "../../../lib/db";
 
-function inferIssueType(tags: string | null, subject: string | null): string {
-  const text = `${tags ?? ""} ${subject ?? ""}`.toLowerCase();
-  if (text.includes("arrived warm")) return "Arrived Warm";
-  if (text.includes("not-shipped") || text.includes("not shipped")) return "Not Shipped";
-  if (text.includes("reship") || text.includes("order issue")) return "Order Issue / Reship";
-  if (text.includes("cancel")) return "Cancellation";
-  if (text.includes("refund")) return "Refund";
-  if (text.includes("edit-address") || text.includes("address")) return "Address Change";
-  if (text.includes("spoil") || text.includes("mold") || text.includes("quality") || text.includes("product issue")) return "Product Quality";
-  if (text.includes("account")) return "Account";
-  if (text.includes("general")) return "General Inquiry";
-  if (text.includes("top priority")) return "Escalation";
+// Map canonical concerns → ops issue type buckets (used by the Cost-of-Issues page).
+function bucket(concerns: string[]): string {
+  if (concerns.includes("Arrived Warm")) return "Arrived Warm";
+  if (concerns.includes("Lost in Transit") || concerns.includes("Misdelivered")) return "Lost in Transit";
+  if (concerns.includes("Delayed")) return "Delayed in Transit";
+  if (concerns.includes("Not Received")) return "Lost in Transit";
+  if (concerns.includes("Mold") || concerns.includes("Spoiled") || concerns.includes("Expired") ||
+      concerns.includes("Damaged") || concerns.includes("Quality Issue") || concerns.includes("Contamination"))
+    return "Product Quality";
+  if (concerns.includes("Missing/Wrong Item")) return "Missing/Wrong Item";
+  if (concerns.includes("Cancellation") || concerns.includes("Subscription Skip") ||
+      concerns.includes("Subscription Change") || concerns.includes("Billing Dispute"))
+    return "Cancellation/Billing";
+  if (concerns.includes("Address Change") || concerns.includes("Wrong Address")) return "Address Change";
+  if (concerns.includes("Spam/Bot")) return "Bot/System";
   return "Other";
 }
 
-function inferResolution(tags: string | null, subject: string | null): string | null {
-  const text = `${tags ?? ""} ${subject ?? ""}`.toLowerCase();
-  if (text.includes("partial reship")) return "partial reship";
-  if (text.includes("reship")) return "full reship";
-  if (text.includes("refund")) return "full refund";
-  if (text.includes("extra cheese")) return "extra cheese";
-  if (text.includes("extra meat")) return "extra meat";
-  if (text.includes("extra accompaniment")) return "extra accompaniment";
-  if (text.includes("information") || text.includes("general")) return "information given";
+// Resolution → cost. Tag-based since IRG records actions as macros.
+function resolution(tags: string | null): string | null {
+  if (!tags) return null;
+  const t = tags.toLowerCase();
+  if (t.includes("partial reship")) return "partial reship";
+  if (t.includes("reship") && t.includes("arrived warm")) return "partial reship";
+  if (t.includes("reship")) return "full reship";
+  if (t.includes("extra cheese")) return "extra cheese";
+  if (t.includes("extra meat")) return "extra meat";
+  if (t.includes("extra accompaniment")) return "extra accompaniment";
+  if (t.includes("cancel/refund") || t.includes("cancel sub") || t.includes("cancel order")) return "cancellation";
+  if (t.includes("refund")) return "full refund";
+  if (t.includes("information") || t.includes("general")) return "information given";
   return null;
+}
+
+function parseJson<T>(v: unknown, fallback: T): T {
+  if (v == null) return fallback;
+  if (typeof v === "string") { try { return JSON.parse(v) as T; } catch { return fallback; } }
+  return v as T;
 }
 
 export async function GET() {
   try {
-    const [rows] = await pool.query(`
-      SELECT ticket_id, ticket_created_at, subject, status, customer_email,
-             tags, assignee_email, order_number, shopify_order_id
-      FROM gorgias_tickets
-      WHERE ticket_created_at IS NOT NULL
-      ORDER BY ticket_created_at DESC
-      LIMIT 1000
-    `);
+    const since = new Date(Date.now() - 84 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 19).replace("T", " ");
+    const [rows] = await pool.query(
+      `SELECT ticket_id, ticket_created_at, subject, status, customer_email,
+              tags, assignee_email, order_number, shopify_order_id, concerns
+       FROM gorgias_tickets
+       WHERE ticket_created_at IS NOT NULL AND ticket_created_at >= ?
+       ORDER BY ticket_created_at DESC`,
+      [since],
+    );
 
-    const ops = (rows as Record<string, unknown>[]).map((r) => ({
-      date: r.ticket_created_at,
-      contactReason: r.subject,
-      orderNumber: r.order_number ?? String(r.ticket_id),
-      gorgiasLink: `https://appyhour.gorgias.com/app/ticket/${r.ticket_id}`,
-      carrier: null,
-      destinationState: null,
-      fulfillmentCenter: null,
-      issueType: inferIssueType(r.tags as string, r.subject as string),
-      resolution: inferResolution(r.tags as string, r.subject as string),
-      comment: r.tags,
-    }));
+    const ops = (rows as Record<string, unknown>[]).map((r) => {
+      const concerns = parseJson<string[]>(r.concerns, []);
+      const issueType = bucket(concerns);
+      return {
+        date: r.ticket_created_at,
+        contactReason: r.subject,
+        orderNumber: r.order_number ?? String(r.ticket_id),
+        gorgiasLink: `https://appyhour.gorgias.com/app/ticket/${r.ticket_id}`,
+        carrier: null,
+        destinationState: null,
+        fulfillmentCenter: null,
+        issueType,
+        resolution: resolution(r.tags as string | null),
+        comment: r.tags,
+      };
+    });
 
     return NextResponse.json(ops);
   } catch (error: unknown) {

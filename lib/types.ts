@@ -4,10 +4,13 @@ export interface FoodSafetyTicket {
   dateOfComplaint: Date | null;
   customerName: string | null;
   skuInQuestion: string | null;
+  skuItems: string[];
+  skuCategories: string[];
   packagingType: string | null;
   fulfillmentCenter: string | null;
   carrierTrackingNumber: string | null;
   perceivedConcern: string | null;
+  concerns: string[];
   gorgiasLink: string | null;
   ceoComments: string | null;
   direction: string | null;

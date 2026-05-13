@@ -55,12 +55,15 @@ export function normaliseConcern(raw: string | null): string {
   if (s.includes("mold") || s.includes("mould")) return "Mold";
   if (s.includes("expir") || s.includes("best buy") || s.includes("best-before") || s.includes("past best")) return "Expired";
   if (s.includes("spoil")) return "Spoiled";
-  if (s.includes("seal") || s.includes("vacuum") || s.includes("not sealed") || s.includes("broken seal") || s.includes("not properly sealed") || s.includes("already opened")) return "Broken Seal";
+  if (s.includes("arrived warm") || s.includes("arrivedwarm")) return "Arrived Warm";
+  if (s.includes("damaged") || s.includes("broken") || s.includes("crushed") || s.includes("leak")) return "Damaged";
+  if (s.includes("missing") || s.includes("wrong") || s.includes("incorrect")) return "Missing/Wrong Item";
+  if (s.includes("contamina")) return "Contamination";
+  if (s.includes("seal") || s.includes("vacuum") || s.includes("not sealed")) return "Broken Seal";
   if (s.includes("bug") || s.includes("insect")) return "Bugs/Insects";
-  if (s.includes("leak")) return "Leaking";
-  if (s.includes("taste") || s.includes("smell") || s.includes("off") || s.includes("awful")) return "Quality/Taste";
-  if (s.includes("wrong") || s.includes("incorrect")) return "Wrong Item";
-  if (s.includes("no expiration") || s.includes("unlabeled") || s.includes("missing")) return "Labelling Issue";
+  if (s.includes("quality") || s.includes("taste") || s.includes("smell") || s.includes("product issue")) return "Quality Issue";
+  if (s.includes("reship")) return "Reship Requested";
+  if (s.includes("order issue")) return "Order Issue";
   return "Other";
 }
 
@@ -69,10 +72,15 @@ export function skuPareto(
   tickets: FoodSafetyTicket[],
   topN = 10
 ): { sku: string; count: number }[] {
+  // The food-safety sheet records "SKU in question" as a product category
+  // (Cheese / Meat / Accompaniment / etc), not an individual product. Bucket
+  // by skuCategories from the API.
   const counts: Record<string, number> = {};
   for (const t of tickets) {
-    const sku = t.skuInQuestion ?? "Unknown";
-    counts[sku] = (counts[sku] ?? 0) + 1;
+    for (const cat of t.skuCategories ?? []) {
+      if (!cat) continue;
+      counts[cat] = (counts[cat] ?? 0) + 1;
+    }
   }
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
@@ -84,10 +92,12 @@ export function skuPareto(
 export function concernBreakdown(
   tickets: FoodSafetyTicket[]
 ): { concern: string; count: number }[] {
+  // Multi-valued: a ticket with both Mold and Arrived Warm contributes to
+  // each slice. Totals can exceed the ticket count by design.
   const counts: Record<string, number> = {};
   for (const t of tickets) {
-    const c = normaliseConcern(t.perceivedConcern);
-    counts[c] = (counts[c] ?? 0) + 1;
+    const concerns = t.concerns?.length ? t.concerns : [normaliseConcern(t.perceivedConcern)];
+    for (const c of concerns) counts[c] = (counts[c] ?? 0) + 1;
   }
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
@@ -389,22 +399,25 @@ export function matchesShippingFilter(
   return activeCategories.includes(cat as ShippingCategory);
 }
 
-// Estimate resolution cost from the Ops sheet resolution field (no dollar amounts there,
-// so we map from resolution type strings to the Cost of Issues unit cost table).
+// Estimate resolution cost — see Issue Resolution Guide for canonical $ amounts.
+// Cancellations cost us $0 operationally (the customer just gets their order
+// money back; refunding is a wash, not a comp).
 export function estimateOpsCost(resolution: string | null): number {
   if (!resolution) return 0;
   const r = resolution.toLowerCase();
-  // Reship variants
-  if (r === "full reship") return 65;
-  if (r.includes("::reship") || r === "order::reship") return 65;
-  if (r.includes("partial reship")) return 30;
-  // Refunds
-  if (r.includes("full refund")) return 65;
+  if (r.includes("cancellation") || r === "cancel") return 0;
+  if (r.includes("partial reship")) return 30;        // IRG: cheese + meat only
+  if (r === "full reship" || r.includes("::reship")) return 65;
+  if (r.includes("reship")) return 65;
   if (r.includes("partial refund")) return 30;
-  if (r.includes("refund")) return 20;
-  // Credits / comps
+  if (r.includes("full refund")) return 65;
+  if (r.includes("extra cheese")) return 5.5;
+  if (r.includes("extra meat")) return 4;
+  if (r.includes("extra accompaniment")) return 2.5;
   if (r.includes("free item")) return 5.5;
+  // Generic refund / credit fall-through
   if (r.includes("credit")) return 10;
+  if (r.includes("refund")) return 15;
   return 0;
 }
 
@@ -715,8 +728,11 @@ export function foodSafetyKpis(tickets: FoodSafetyTicket[]) {
   const mostCommonConcern = (() => {
     const counts: Record<string, number> = {};
     for (const t of tickets) {
-      const c = normaliseConcern(t.perceivedConcern);
-      counts[c] = (counts[c] ?? 0) + 1;
+      const concerns = t.concerns?.length ? t.concerns : [normaliseConcern(t.perceivedConcern)];
+      for (const c of concerns) {
+        if (c === "Unspecified") continue;
+        counts[c] = (counts[c] ?? 0) + 1;
+      }
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
   })();

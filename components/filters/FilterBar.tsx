@@ -35,17 +35,22 @@ export default function FilterBar() {
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center gap-4">
       <span className="text-xs font-medium text-slate-400 uppercase tracking-wide shrink-0">Filters</span>
 
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-slate-400 mr-1">Packaging</span>
-        {PACKAGING_TYPES.map((p) => (
-          <ToggleChip
-            key={p}
-            label={p === "Cheese Paper and Vac Seal" ? "Both" : p}
-            active={packagingTypes.includes(p)}
-            onClick={() => toggleMulti(packagingTypes, p, setPackagingTypes)}
-          />
-        ))}
-      </div>
+      {/* Packaging filter intentionally hidden — Vac Seal vs Cheese Paper is a
+          Recharge subscription preference, not in Shopify orders or Gorgias.
+          Re-enable once a Recharge sync is in place. */}
+      {false && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400 mr-1">Packaging</span>
+          {PACKAGING_TYPES.map((p) => (
+            <ToggleChip
+              key={p}
+              label={p === "Cheese Paper and Vac Seal" ? "Both" : p}
+              active={packagingTypes.includes(p)}
+              onClick={() => toggleMulti(packagingTypes, p, setPackagingTypes)}
+            />
+          ))}
+        </div>
+      )}
 
       {hasActiveFilters && (
         <button

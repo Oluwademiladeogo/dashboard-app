@@ -8,10 +8,14 @@ import {
 } from "@/lib/data";
 import {
   SHIPPING_CATEGORIES,
+  aggregateShipmentsByWeek,
   boxCostImpact,
+  classifyIssueType,
   costKpis,
   detectPartialWeeksFromShipments,
+  estimateOpsCost,
   opsCostByCategory,
+  weekStartMonday,
   weeklyIssuesAndOrders,
   withRollingAvg,
 } from "@/lib/transforms";
@@ -537,9 +541,44 @@ export default function CostPage() {
   );
 
   // Charts include partial weeks (visually distinguished) — pass partial set for marking.
+  // Cost-per-order trend. When shipping filters are active, recompute weekly
+  // cost from filtered ops ÷ filtered orders so the chart actually responds.
+  const trendBase = useMemo(() => {
+    if (activeShipping.length === 0) return filteredWeeklyCost;
+
+    // Sum resolution $ per ISO-Monday week for filtered ops.
+    const weekCost = new Map<string, number>();
+    for (const t of filteredOps) {
+      if (!t.date) continue;
+      const cat = classifyIssueType(t.issueType);
+      if (!activeShipping.includes(cat as ShippingCategory)) continue;
+      const monday = weekStartMonday(new Date(t.date));
+      const key = monday.toISOString().slice(0, 10);
+      weekCost.set(key, (weekCost.get(key) ?? 0) + estimateOpsCost(t.resolution));
+    }
+
+    // Orders per week from shipments.
+    const weekOrders = new Map<string, number>();
+    for (const o of aggregateShipmentsByWeek(filteredShipments)) {
+      weekOrders.set(o.weekStart.toISOString().slice(0, 10), o.total);
+    }
+
+    const weeks = Array.from(new Set([...weekCost.keys(), ...weekOrders.keys()])).sort();
+    return weeks.map((k) => {
+      const weekStart = new Date(`${k}T00:00:00Z`);
+      const orders = weekOrders.get(k) ?? 0;
+      const cost = weekCost.get(k) ?? 0;
+      return {
+        weekLabel: `${weekStart.getUTCMonth() + 1}/${weekStart.getUTCDate()}`,
+        weekStart,
+        costPerOrder: orders > 0 ? cost / orders : 0,
+      };
+    });
+  }, [activeShipping, filteredOps, filteredShipments, filteredWeeklyCost]);
+
   const trend = useMemo(
-    () => withRollingAvg(filteredWeeklyCost, 4, partialWeeks),
-    [filteredWeeklyCost, partialWeeks]
+    () => withRollingAvg(trendBase, 4, partialWeeks),
+    [trendBase, partialWeeks]
   );
   const issuesOrders = useMemo(
     () => weeklyIssuesAndOrders(filteredOps, filteredShipments, activeShipping, partialWeeks),
@@ -676,7 +715,7 @@ export default function CostPage() {
         {/* Tile 1 */}
         <Card
           title="Cost of issues per order, weekly"
-          sub="Resolution $ ÷ orders shipped. Down = good. Filter chips above don't apply here — this is the raw PnL signal."
+          sub={`Resolution $ ÷ orders shipped. Down = good.${activeShipping.length > 0 ? ` Filtered: ${activeShipping.join(", ")}.` : " Showing all issue types — apply chips above to filter."}`}
           headerRight={
             <ChartTypeToggle
               value={trendType}

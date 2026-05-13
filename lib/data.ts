@@ -20,10 +20,13 @@ type FoodSafetyApiRow = {
   dateOfComplaint?: string | null;
   customerName?: string | null;
   skuInQuestion?: string | null;
+  skuItems?: string[] | null;
+  skuCategories?: string[] | null;
   packagingType?: string | null;
   fulfillmentCenter?: string | null;
   carrierTrackingNumber?: string | null;
   perceivedConcern?: string | null;
+  concerns?: string[] | null;
   gorgiasLink?: string | null;
   ceoComments?: string | null;
   direction?: string | null;
@@ -73,10 +76,13 @@ export async function fetchFoodSafety(): Promise<FoodSafetyTicket[]> {
     dateOfComplaint: parseDate(r.dateOfComplaint),
     customerName: str(r.customerName),
     skuInQuestion: str(r.skuInQuestion),
+    skuItems: Array.isArray(r.skuItems) ? r.skuItems : [],
+    skuCategories: Array.isArray(r.skuCategories) ? r.skuCategories : [],
     packagingType: str(r.packagingType),
     fulfillmentCenter: str(r.fulfillmentCenter),
     carrierTrackingNumber: str(r.carrierTrackingNumber),
     perceivedConcern: str(r.perceivedConcern),
+    concerns: Array.isArray(r.concerns) ? r.concerns : [],
     gorgiasLink: str(r.gorgiasLink),
     ceoComments: str(r.ceoComments),
     direction: str(r.direction),

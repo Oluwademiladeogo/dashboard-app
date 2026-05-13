@@ -40,10 +40,11 @@ export default function HorizontalBar({ data, formatter, color = "#3b82f6" }: Pr
         <XAxis
           type="number"
           tick={{ fontSize: 10, fill: "#94a3b8" }}
-          tickFormatter={formatter}
+          tickFormatter={formatter ?? ((v: number) => Math.round(v).toString())}
           axisLine={false}
           tickLine={false}
-          domain={[0, max * 1.1]}
+          domain={[0, Math.ceil(max * 1.1)]}
+          allowDecimals={false}
         />
         <YAxis
           type="category"
