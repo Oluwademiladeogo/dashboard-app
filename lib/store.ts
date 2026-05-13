@@ -10,6 +10,7 @@ interface FilterStore extends FilterState {
   setPackagingTypes: (types: string[]) => void;
   setCarriers: (carriers: string[]) => void;
   setDestinationStates: (states: string[]) => void;
+  setIncludeArrivedWarm: (v: boolean) => void;
   resetFilters: () => void;
 }
 
@@ -20,6 +21,7 @@ const defaultState = (): FilterState => ({
   packagingTypes: [],
   carriers: [],
   destinationStates: [],
+  includeArrivedWarm: false,
 });
 
 export const useFilterStore = create<FilterStore>()(
@@ -31,6 +33,7 @@ export const useFilterStore = create<FilterStore>()(
       setPackagingTypes: (types) => set({ packagingTypes: types }),
       setCarriers: (carriers) => set({ carriers }),
       setDestinationStates: (states) => set({ destinationStates: states }),
+      setIncludeArrivedWarm: (v) => set({ includeArrivedWarm: v }),
       resetFilters: () => set(defaultState()),
     }),
     {

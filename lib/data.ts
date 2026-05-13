@@ -64,8 +64,9 @@ type ShipmentApiRow = {
   total?: number;
 };
 
-export async function fetchFoodSafety(): Promise<FoodSafetyTicket[]> {
-  const res = await fetch('/api/food-safety', { cache: 'no-store' });
+export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Promise<FoodSafetyTicket[]> {
+  const url = '/api/food-safety' + (includeArrivedWarm ? '?includeArrivedWarm=1' : '');
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Failed to fetch /api/food-safety: ${res.status}`);
   
   const json = (await res.json()) as unknown;

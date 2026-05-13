@@ -24,6 +24,7 @@ export default function FilterBar() {
   const {
     packagingTypes, setPackagingTypes, resetFilters,
   } = useFilterStore();
+  const { includeArrivedWarm, setIncludeArrivedWarm } = useFilterStore();
 
   function toggleMulti<T extends string>(current: T[], value: T, setter: (v: T[]) => void) {
     setter(current.includes(value) ? current.filter((v) => v !== value) : [...current, value]);
@@ -60,6 +61,13 @@ export default function FilterBar() {
           Reset filters
         </button>
       )}
+      <div className="ml-auto">
+        <ToggleChip
+          label="Include Arrived Warm"
+          active={Boolean(includeArrivedWarm)}
+          onClick={() => setIncludeArrivedWarm(!includeArrivedWarm)}
+        />
+      </div>
     </div>
   );
 }

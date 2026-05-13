@@ -56,11 +56,22 @@ function parseJson<T>(v: unknown, fallback: T): T {
   return v as T;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Source of truth: is_food_safety + concerns columns populated by the
     // Haiku classifier (see _classifier.mjs / reporting-sync workflow).
-    // No more LIKE-tag parsing in dashboard SQL.
+    // No more LIKE-tag parsing in dashboard SQL. Allow client to request
+    // inclusion of 'Arrived Warm' via query param `includeArrivedWarm=1`.
+    const p = request.nextUrl.searchParams.get('includeArrivedWarm');
+    const includeArrived = p === '1' || p === 'true';
+
+    let whereClause = 'WHERE t.is_food_safety = 1';
+    if (!includeArrived) {
+      // Exclude tickets that are explicitly tagged/marked as Arrived Warm so
+      // they are filtered out by default in the dashboard.
+      whereClause += " AND NOT (t.tags LIKE '%Arrived Warm%' OR t.tags LIKE '%Arrived warm%' OR t.concerns LIKE '%Arrived Warm%' OR t.concerns LIKE '%Arrived warm%')";
+    }
+
     const [rows] = await pool.query(`
       SELECT t.ticket_id, t.ticket_created_at, t.ticket_closed_at, t.customer_name,
              t.customer_email, t.order_number, t.tags, t.status, t.subject,
@@ -75,7 +86,7 @@ export async function GET() {
         AND s.product_name NOT LIKE '%Custom Box%'
         AND s.product_name NOT LIKE '%Monthly Curation%'
         AND s.product_name NOT LIKE '%AppyHour Box%'
-      WHERE t.is_food_safety = 1
+      ${whereClause}
       GROUP BY t.ticket_id
       ORDER BY t.ticket_created_at DESC
       LIMIT 1000

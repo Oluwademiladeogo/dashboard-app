@@ -385,7 +385,7 @@ export default function FoodSafetyPage() {
   const filters = useFilterStore();
 
   useEffect(() => {
-    fetchFoodSafety()
+    fetchFoodSafety(filters.includeArrivedWarm)
       .then((data) => {
         setAllTickets(data);
         const latest = data
@@ -399,7 +399,7 @@ export default function FoodSafetyPage() {
         setError(e instanceof Error ? e.message : "Failed to load data");
         setLoading(false);
       });
-  }, []);
+  }, [filters.includeArrivedWarm]);
 
   const tickets = useMemo(() => {
     // No date filtering - show all data

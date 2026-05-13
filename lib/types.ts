@@ -60,6 +60,7 @@ export interface FilterState {
   packagingTypes: string[];
   carriers: string[];
   destinationStates: string[];
+  includeArrivedWarm?: boolean;
 }
 
 export type ShippingCategory = "Arrived Warm" | "Delayed in Transit" | "Lost in Transit";
