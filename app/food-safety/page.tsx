@@ -218,6 +218,31 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
   }
 
+  function downloadCsv() {
+    const headers = ["Shopify #", "Date", "Customer", "SKU", "Concern", "Action", "Cost", "Status", "Gorgias Link"];
+    const rows = sorted.map((t) => [
+      t.shopifyOrderNumber ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}` : "",
+      t.dateOfComplaint ? t.dateOfComplaint.toISOString().slice(0, 10) : "",
+      t.customerName ?? "",
+      t.skuInQuestion ?? "",
+      t.perceivedConcern ?? "",
+      t.correctiveAction ?? "",
+      t.resolutionCost > 0 ? t.resolutionCost.toFixed(0) : "",
+      t.isResolved ? "Resolved" : "Open",
+      t.gorgiasLink ?? "",
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `food-safety-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -244,6 +269,15 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
           />
         </div>
         <span className="text-xs text-slate-400 shrink-0">{sorted.length} records</span>
+        <button
+          onClick={downloadCsv}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-all"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          CSV
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[600px] overflow-y-auto">
@@ -533,7 +567,7 @@ export default function FoodSafetyPage() {
             <Card title="Concern Breakdown" sub="By complaint count">
               <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
             </Card>
-            <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
+            <Card title="Top 10 Products by Complaint Count" sub="Product names where linked; category fallback otherwise">
               <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
             </Card>
           </div>
@@ -558,7 +592,7 @@ export default function FoodSafetyPage() {
               </Card>
             </div>
 
-            <Card title="Top 10 SKUs by Complaint Count" sub="Weekly ranking by total complaint count">
+            <Card title="Top 10 Products by Complaint Count" sub="Product names where linked; category fallback otherwise">
               <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
             </Card>
           </>

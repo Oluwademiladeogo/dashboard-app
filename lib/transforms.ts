@@ -1,51 +1,9 @@
 import type { FoodSafetyTicket, OpsTicket, WeeklyCostPoint, ShippingCategory, ShipmentWeek } from "./types";
+import { parseResolution } from "./resolution";
 
 // ── Resolution cost parser ───────────────────────────────────────────────────
-// Parses free-text corrective action into a dollar cost.
-// Reference unit costs from the Cost of Issues sheet.
-const UNIT_COSTS: Record<string, number> = {
-  "full reship": 65,
-  "reship": 65,
-  "partial reship": 30,
-  "full refund": 65,
-  "extra cheese": 5.5,
-  "extra meat": 4,
-  "extra accompaniment": 2.5,
-  "information given": 0,
-};
-
 export function parseResolutionCost(action: string | null): number {
-  if (!action) return 0;
-  const ca = action.toLowerCase().trim();
-
-  // Check named resolutions first
-  for (const [key, cost] of Object.entries(UNIT_COSTS)) {
-    if (ca === key) return cost;
-  }
-  if (ca.includes("full reship")) return 65;
-  if (ca.includes("partial reship")) return 30;
-  if (ca.includes("full refund")) return 65;
-  if (ca.includes("information given")) return 0;
-
-  // Extract dollar amount — handles "$10", "Amount $15", "Refund of $50", "$40+"
-  const dollarMatch = ca.match(/\$(\d+(?:\.\d+)?)\+?/);
-  const baseAmount = dollarMatch ? parseFloat(dollarMatch[1]) : 0;
-
-  // "$40+" treated as $45 (Cost of Issues convention)
-  const isFortyPlus = ca.includes("40+") || ca.includes("amount $40");
-  const amount = isFortyPlus ? 45 : baseAmount;
-
-  // Add comp item costs when present alongside a credit
-  let compCost = 0;
-  if (ca.includes("extra cheese") || ca.includes("cheese")) compCost += 5.5;
-  if (ca.includes("extra meat") || (ca.includes("meat") && !ca.includes("cheese"))) compCost += 4;
-  if (ca.includes("extra accompaniment") || ca.includes("accompaniment")) compCost += 2.5;
-
-  // If only comp item, no explicit dollar
-  if (amount === 0 && compCost > 0) return compCost;
-  if (amount > 0) return amount + (dollarMatch && ca.includes("extra") ? compCost : 0);
-
-  return 0;
+  return parseResolution(action, null).cost;
 }
 
 // ── Perceived concern normaliser ─────────────────────────────────────────────
@@ -72,14 +30,18 @@ export function skuPareto(
   tickets: FoodSafetyTicket[],
   topN = 10
 ): { sku: string; count: number }[] {
-  // The food-safety sheet records "SKU in question" as a product category
-  // (Cheese / Meat / Accompaniment / etc), not an individual product. Bucket
-  // by skuCategories from the API.
+  // Prefer skuItems (actual Shopify product names) when available.
+  // Fall back to skuCategories only for tickets with no linked order.
   const counts: Record<string, number> = {};
   for (const t of tickets) {
-    for (const cat of t.skuCategories ?? []) {
-      if (!cat) continue;
-      counts[cat] = (counts[cat] ?? 0) + 1;
+    const items = t.skuItems?.filter(Boolean) ?? [];
+    if (items.length > 0) {
+      for (const item of items) counts[item] = (counts[item] ?? 0) + 1;
+    } else {
+      for (const cat of t.skuCategories ?? []) {
+        if (!cat) continue;
+        counts[cat] = (counts[cat] ?? 0) + 1;
+      }
     }
   }
   return Object.entries(counts)
@@ -104,6 +66,35 @@ export function concernBreakdown(
     .map(([concern, count]) => ({ concern, count }));
 }
 
+export function concernCostImpact(
+  tickets: FoodSafetyTicket[]
+): { concern: string; totalCost: number }[] {
+  const totals: Record<string, number> = {};
+  for (const t of tickets) {
+    if (!t.hasAppliedResolution || t.resolutionCost <= 0) continue;
+    const concerns = t.concerns?.length ? t.concerns : [normaliseConcern(t.perceivedConcern)];
+    for (const c of concerns) {
+      totals[c] = (totals[c] ?? 0) + t.resolutionCost;
+    }
+  }
+  return Object.entries(totals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([concern, totalCost]) => ({ concern, totalCost }));
+}
+
+export function rootCauseBreakdown(
+  tickets: FoodSafetyTicket[]
+): { cause: string; count: number }[] {
+  const counts: Record<string, number> = {};
+  for (const t of tickets) {
+    const cause = t.rootCause ?? "Needs Review";
+    counts[cause] = (counts[cause] ?? 0) + 1;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cause, count]) => ({ cause, count }));
+}
+
 // ── Cost by action type ───────────────────────────────────────────────────────
 export function costByActionType(
   tickets: FoodSafetyTicket[]
@@ -121,26 +112,8 @@ export function costByActionType(
 }
 
 function normaliseAction(action: string | null): string {
-  if (!action) return "Unknown";
-  const a = action.toLowerCase();
-  if (a.includes("full reship") || a === "reship") return "Full Reship";
-  if (a.includes("partial reship")) return "Partial Reship";
-  if (a.includes("full refund")) return "Full Refund";
-  if (a.includes("extra cheese") && (a.includes("$10") || a.includes("10 off"))) return "$10 + Extra Cheese";
-  if (a.includes("extra meat") && (a.includes("$10") || a.includes("10 off"))) return "$10 + Extra Meat";
-  if (a.includes("extra cheese")) return "Extra Cheese";
-  if (a.includes("extra meat")) return "Extra Meat";
-  if (a.includes("extra accompaniment")) return "Extra Accompaniment";
-  if (a.includes("information given")) return "Information Given";
-  // extract dollar amount pattern
-  const m = a.match(/\$(\d+)/);
-  if (m) {
-    const amt = parseInt(m[1]);
-    if (a.includes("40+")) return "$40+ Credit/Refund";
-    if (amt >= 30) return `$${amt}+ Credit/Refund`;
-    return `$${amt} Credit/Refund`;
-  }
-  return "Other";
+  const parsed = parseResolution(action, null);
+  return parsed.label ?? "Unknown";
 }
 
 // ── Weekly trend ─────────────────────────────────────────────────────────────
@@ -404,21 +377,10 @@ export function matchesShippingFilter(
 // money back; refunding is a wash, not a comp).
 export function estimateOpsCost(resolution: string | null): number {
   if (!resolution) return 0;
-  const r = resolution.toLowerCase();
-  if (r.includes("cancellation") || r === "cancel") return 0;
-  if (r.includes("partial reship")) return 30;        // IRG: cheese + meat only
-  if (r === "full reship" || r.includes("::reship")) return 65;
-  if (r.includes("reship")) return 65;
-  if (r.includes("partial refund")) return 30;
-  if (r.includes("full refund")) return 65;
-  if (r.includes("extra cheese")) return 5.5;
-  if (r.includes("extra meat")) return 4;
-  if (r.includes("extra accompaniment")) return 2.5;
-  if (r.includes("free item")) return 5.5;
-  // Generic refund / credit fall-through
-  if (r.includes("credit")) return 10;
-  if (r.includes("refund")) return 15;
-  return 0;
+  if (resolution.toLowerCase().includes("cancellation") || resolution.toLowerCase() === "cancel") {
+    return 0;
+  }
+  return parseResolution(resolution, null).cost;
 }
 
 // Cost by issue category from Ops tickets
@@ -721,10 +683,11 @@ export function boxCostImpact(
 // ── KPI summaries ─────────────────────────────────────────────────────────────
 export function foodSafetyKpis(tickets: FoodSafetyTicket[]) {
   const totalComplaints = tickets.length;
-  const totalCost = tickets.reduce((s, t) => s + t.resolutionCost, 0);
+  const resolvedWithAction = tickets.filter((t) => t.hasAppliedResolution).length;
+  const totalCost = tickets.reduce((s, t) => s + (t.hasAppliedResolution ? t.resolutionCost : 0), 0);
   const resolved = tickets.filter((t) => t.isResolved).length;
   const unresolved = totalComplaints - resolved;
-  const avgCost = totalComplaints > 0 ? totalCost / totalComplaints : 0;
+  const avgCost = resolvedWithAction > 0 ? totalCost / resolvedWithAction : 0;
   const mostCommonConcern = (() => {
     const counts: Record<string, number> = {};
     for (const t of tickets) {
@@ -736,5 +699,5 @@ export function foodSafetyKpis(tickets: FoodSafetyTicket[]) {
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
   })();
-  return { totalComplaints, totalCost, resolved, unresolved, avgCost, mostCommonConcern };
+  return { totalComplaints, totalCost, resolved, unresolved, avgCost, mostCommonConcern, resolvedWithAction };
 }

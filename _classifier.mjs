@@ -69,6 +69,12 @@ const SKU_VOCAB = ["Cheese", "Meat", "Accompaniment", "Cheese & Jam Pairing", "C
 const FOOD_SAFETY_CONCERNS = new Set([
   "Mold", "Spoiled", "Expired", "Broken Seal", "Contamination",
 ]);
+const NON_FOOD_CONTEXT = new Set([
+  "Arrived Warm", "Damaged in Transit", "Missing/Wrong Item", "Quality Issue",
+  "Substitution Complaint", "Delayed", "Lost in Transit", "Misdelivered",
+  "Not Received", "Wrong Address", "Cancellation", "Subscription Skip",
+  "Subscription Change", "Billing Dispute", "Address Change", "Other",
+]);
 
 const SYSTEM = `You classify customer-service tickets for AppyHour, an artisan cheese & charcuterie box subscription. You apply the Issue Resolution Guide taxonomy. Be conservative: only emit a concern if the customer's words clearly imply it. Tags applied by CS are unreliable hints — use the message body as ground truth.
 
@@ -76,7 +82,7 @@ Output STRICT JSON, no prose:
 {
   "concerns": [<one or more from: ${CONCERN_VOCAB.join(", ")}>],
   "sku_categories": [<zero or more from: ${SKU_VOCAB.join(", ")}>],
-  "is_food_safety": <true if any concern is Arrived Warm | Mold | Spoiled | Expired | Damaged | Missing/Wrong Item | Quality Issue | Contamination, else false>,
+  "is_food_safety": <true only if any concern is Mold | Spoiled | Expired | Broken Seal | Contamination, else false>,
   "reasoning": "<one short sentence>"
 }
 
@@ -99,9 +105,69 @@ Other:
 - Cancellation/skip/billing tickets → non-food concerns and is_food_safety=false.
 - Spam, no-reply bot emails, recharge notifications → Spam/Bot.
 - "Reship" or "Order Issue" in tags alone is NOT a concern.
+- If the complaint is mainly delay, misdelivery, wrong address, or customer handling, do NOT add Spoiled unless the message clearly says the box was delivered correctly, on time, and still unsafe.
+- If Mold or Spoiled applies to the same item, do not also add generic Quality Issue for that same item.
 - If unclear, emit ["Other"].
 
 Set is_food_safety=true ONLY if a concern is in {Mold, Spoiled, Expired, Broken Seal, Contamination}.`;
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function inferRootCause(concerns, excerpt) {
+  const text = (excerpt || "").toLowerCase();
+  if (concerns.some((c) => ["Delayed", "Arrived Warm"].includes(c)) || text.includes("melted")) return "Carrier Delay/Temperature";
+  if (concerns.some((c) => ["Misdelivered", "Not Received", "Wrong Address", "Lost in Transit"].includes(c))) return "Delivery Error";
+  if (concerns.includes("Damaged in Transit")) return "Transit Damage";
+  if (concerns.some((c) => FOOD_SAFETY_CONCERNS.has(c))) return "Product/Packaging";
+  return "Needs Review";
+}
+
+function normalizeClassification(concerns, skuCategories, excerpt) {
+  const text = (excerpt || "").toLowerCase();
+  let nextConcerns = unique(concerns);
+  let nextSkuCategories = unique(skuCategories);
+
+  if (nextConcerns.includes("Mold") || nextConcerns.includes("Spoiled")) {
+    nextConcerns = nextConcerns.filter((c) => c !== "Quality Issue");
+  }
+
+  const hasTransitContext = nextConcerns.some((c) =>
+    ["Delayed", "Misdelivered", "Not Received", "Wrong Address", "Arrived Warm"].includes(c)
+  );
+  if (hasTransitContext) {
+    nextConcerns = nextConcerns.filter((c) => c !== "Spoiled");
+  }
+
+  if (text.includes("gel pack") || text.includes("ice pack")) {
+    nextConcerns = nextConcerns.filter((c) => c !== "Contamination");
+  }
+
+  if (text.includes("customer mistake") || text.includes("wrong address") || text.includes("entered the wrong")) {
+    nextConcerns = nextConcerns.filter((c) => c !== "Spoiled");
+  }
+
+  if (nextConcerns.includes("Mold") && nextSkuCategories.length > 1) {
+    nextSkuCategories = nextSkuCategories.filter((c) => c === "Cheese" || c === "Meat");
+  }
+
+  const rootCause = inferRootCause(nextConcerns, excerpt);
+  const needsReview =
+    !nextConcerns.some((c) => FOOD_SAFETY_CONCERNS.has(c)) ||
+    nextConcerns.some((c) => NON_FOOD_CONTEXT.has(c)) ||
+    nextSkuCategories.length !== 1 ||
+    nextSkuCategories.includes("Box (overall)") ||
+    nextSkuCategories.includes("Treats");
+
+  return {
+    concerns: nextConcerns,
+    sku_categories: nextSkuCategories,
+    is_food_safety: nextConcerns.some((c) => FOOD_SAFETY_CONCERNS.has(c)),
+    root_cause: rootCause,
+    needs_review: needsReview,
+  };
+}
 
 async function classifyMessage(excerpt) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -124,6 +190,27 @@ async function classifyMessage(excerpt) {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("no JSON in Haiku response: " + text.slice(0, 200));
   return JSON.parse(m[0]);
+}
+
+// Strip Stamped.io review email boilerplate — header, star rating markup, product
+// title/URL, and footer — leaving only the review Title + body text.
+// Stamped emails follow a fixed structure: header block → star line → product link
+// → Title: ... → body text → reviewer name/email → footer.
+function stripStampedBoilerplate(body) {
+  if (!body) return "";
+  const lines = body.split(/\r?\n/);
+  const out = [];
+  let inReview = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    // Start capturing at "Title:" — everything before is header/product metadata.
+    if (!inReview && /^Title:/i.test(line)) { inReview = true; }
+    if (!inReview) continue;
+    // Stop at the reviewer byline (name + email link) or "View" action link.
+    if (/^View\s+\(https?:/i.test(line)) break;
+    out.push(raw);
+  }
+  return out.join("\n").trim();
 }
 
 // Strip auto-reply quotes, internal-note text, and signature blocks so we never
@@ -170,8 +257,13 @@ async function fetchFirstCustomerMessage(ticketId) {
   );
   if (customerMsgs.length === 0) return "";
   const first = customerMsgs[0];
-  const body = first.body_text || first.stripped_text || "";
-  return stripQuotedReply(body).trim();
+  const raw = first.body_text || first.stripped_text || "";
+  // Stamped.io review emails need their header/product-title boilerplate stripped
+  // first; then run the standard quoted-reply stripper on the result.
+  const deStamped = first.from_address?.includes("stamped.io") || first.sender?.email?.includes("stamped.io")
+    ? stripStampedBoilerplate(raw)
+    : raw;
+  return stripQuotedReply(deStamped).trim();
 }
 
 function diff(tagsRaw, concerns) {
@@ -222,7 +314,7 @@ async function processTicket(t) {
       `UPDATE gorgias_tickets
          SET concerns = ?, sku_categories = ?, is_food_safety = 0,
              classified_by = 'fast-path', classified_at = NOW(),
-             tag_audit = NULL, message_excerpt = ?
+             tag_audit = NULL, message_excerpt = ?, root_cause = 'Needs Review', needs_review = 1
        WHERE ticket_id = ?`,
       [JSON.stringify(fast.concerns), JSON.stringify(fast.sku_categories),
        (t.subject || "").slice(0, 500), t.ticket_id]
@@ -241,7 +333,7 @@ async function processTicket(t) {
       `UPDATE gorgias_tickets
          SET concerns = ?, sku_categories = ?, is_food_safety = 0,
              classified_by = 'no-customer-content', classified_at = NOW(),
-             tag_audit = NULL, message_excerpt = NULL
+             tag_audit = NULL, message_excerpt = NULL, root_cause = 'Needs Review', needs_review = 1
        WHERE ticket_id = ?`,
       [JSON.stringify(["Spam/Bot"]), JSON.stringify([]), t.ticket_id]
     );
@@ -251,17 +343,17 @@ async function processTicket(t) {
   const cls = await classifyMessage(`Subject: ${t.subject || "(none)"}\nCS tags: ${t.tags || "(none)"}\n\nCustomer message:\n${excerpt}`);
   const concerns = Array.isArray(cls.concerns) ? cls.concerns.filter((c) => CONCERN_VOCAB.includes(c)) : [];
   const skuCats = Array.isArray(cls.sku_categories) ? cls.sku_categories.filter((c) => SKU_VOCAB.includes(c)) : [];
-  const isFoodSafety = concerns.some((c) => FOOD_SAFETY_CONCERNS.has(c));
-  const audit = diff(t.tags, concerns);
+  const normalized = normalizeClassification(concerns, skuCats, excerpt);
+  const audit = diff(t.tags, normalized.concerns);
 
   await pool.query(
     `UPDATE gorgias_tickets
        SET concerns = ?, sku_categories = ?, is_food_safety = ?,
            classified_by = 'haiku', classified_at = NOW(),
-           tag_audit = ?, message_excerpt = ?
+           tag_audit = ?, message_excerpt = ?, root_cause = ?, needs_review = ?
      WHERE ticket_id = ?`,
-    [JSON.stringify(concerns), JSON.stringify(skuCats), isFoodSafety ? 1 : 0,
-     audit ? JSON.stringify(audit) : null, excerpt.slice(0, 2000), t.ticket_id]
+    [JSON.stringify(normalized.concerns), JSON.stringify(normalized.sku_categories), normalized.is_food_safety ? 1 : 0,
+     audit ? JSON.stringify(audit) : null, excerpt.slice(0, 2000), normalized.root_cause, normalized.needs_review ? 1 : 0, t.ticket_id]
   );
 }
 
