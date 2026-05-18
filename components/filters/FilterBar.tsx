@@ -1,7 +1,7 @@
 "use client";
 
 import { useFilterStore } from "@/lib/store";
-import { PACKAGING_TYPES } from "@/lib/config";
+import { PACKAGING_TYPES } from "@/lib/constants";
 
 function ToggleChip({
   label, active, onClick,

@@ -1,24 +1,7 @@
 import { NextResponse } from "next/server";
 import pool from "../../../lib/db";
-
-const COST: Record<string, number> = {
-  reship: 65,
-  refund: 65,
-  "extra cheese": 5.5,
-  "extra meat": 4,
-  "extra accompaniment": 2.5,
-};
-
-function estimateCost(tags: string | null): number {
-  if (!tags) return 0;
-  const t = tags.toLowerCase();
-  if (t.includes("reship")) return COST.reship;
-  if (t.includes("refund")) return COST.refund;
-  if (t.includes("extra cheese")) return COST["extra cheese"];
-  if (t.includes("extra meat")) return COST["extra meat"];
-  if (t.includes("extra accompaniment")) return COST["extra accompaniment"];
-  return 0;
-}
+import { getTableColumns } from "../../../lib/db-columns";
+import { parseResolution } from "../../../lib/resolution";
 
 function toWeekKey(dateStr: string): string {
   const dt = new Date(dateStr);
@@ -32,9 +15,16 @@ function toWeekKey(dateStr: string): string {
 
 export async function GET() {
   try {
-    // Get ticket costs grouped by week from DB
+    const columns = await getTableColumns("gorgias_tickets");
+    const has = (name: string) => columns.has(name);
+    const selectResolutionApplied = has("resolution_applied")
+      ? "resolution_applied"
+      : "NULL AS resolution_applied";
+    const selectResolutionCost = has("resolution_cost")
+      ? "resolution_cost"
+      : "NULL AS resolution_cost";
     const [rows] = await pool.query(`
-      SELECT ticket_created_at, tags
+      SELECT ticket_created_at, tags, ${selectResolutionApplied}, ${selectResolutionCost}
       FROM gorgias_tickets
       WHERE ticket_created_at IS NOT NULL
     `) as [Record<string, unknown>[], unknown];
@@ -42,10 +32,12 @@ export async function GET() {
     const weekCosts = new Map<string, number>();
     for (const row of rows) {
       const ws = toWeekKey(String(row.ticket_created_at));
-      weekCosts.set(ws, (weekCosts.get(ws) ?? 0) + estimateCost(row.tags as string | null));
+      const dbCost = Number(row.resolution_cost ?? 0);
+      const parsed = parseResolution(row.resolution_applied as string | null, row.tags as string | null);
+      const cost = dbCost > 0 ? dbCost : parsed.cost;
+      weekCosts.set(ws, (weekCosts.get(ws) ?? 0) + cost);
     }
 
-    // Count unique orders per week using MIN(order_created_at) per shopify_order_id
     const [uniqueOrders] = await pool.query(`
       SELECT shopify_order_id, MIN(order_created_at) AS order_created_at
       FROM gorgias_tickets
@@ -59,7 +51,6 @@ export async function GET() {
       weekOrderCounts.set(ws, (weekOrderCounts.get(ws) ?? 0) + 1);
     }
 
-    // Build payload — include ALL weeks in range, zero-cost weeks included
     const allWeeks = new Set([...weekCosts.keys(), ...weekOrderCounts.keys()]);
     const weeks = Array.from(allWeeks).sort();
     const payload = weeks.map((ws) => {

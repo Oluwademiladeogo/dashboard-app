@@ -1,34 +1,35 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import pool from "../../../lib/db";
+import { getTableColumns } from "../../../lib/db-columns";
+import { parseResolution } from "../../../lib/resolution";
 
-// Cost mapping mirrors the Issue Resolution Guide. Indexed by canonical concern.
-const COST_BY_CONCERN: Record<string, number> = {
-  "Mold": 65,                    // Full reship
-  "Spoiled": 65,                 // Full reship
-  "Expired": 65,                 // Full reship — past best-before
-  "Broken Seal": 30,             // Partial reship of compromised item
-  "Contamination": 65,           // Full reship — escalate to Dan
-};
-
-// Only product-condition concerns belong on the food-safety page, per the
-// "UPDATE_Food Safety" sheet in the Issue Resolution Guide workbook.
-// Operational concerns (Arrived Warm, Missing/Wrong Item, Damaged in transit,
-// Quality/taste complaints, Substitution complaints) live on the cost page,
-// not here — they are tracked in the "UPDATE_Operational Issues" sheet.
 const FOOD_SAFETY_CONCERNS = new Set([
-  "Mold", "Spoiled", "Expired", "Broken Seal", "Contamination",
+  "Mold",
+  "Spoiled",
+  "Expired",
+  "Broken Seal",
+  "Contamination",
 ]);
 
-function inferResolutionCost(concerns: string[]): number {
-  // Take the worst-case (highest) cost among the present concerns; never sum
-  // — one ticket = one resolution.
-  let max = 0;
-  for (const c of concerns) {
-    const v = COST_BY_CONCERN[c] ?? 0;
-    if (v > max) max = v;
-  }
-  return max;
-}
+const NON_FOOD_CONTEXT = new Set([
+  "Arrived Warm",
+  "Damaged",
+  "Damaged in Transit",
+  "Missing/Wrong Item",
+  "Quality Issue",
+  "Delayed",
+  "Lost in Transit",
+  "Misdelivered",
+  "Not Received",
+  "Wrong Address",
+  "Cancellation",
+  "Subscription Skip",
+  "Subscription Change",
+  "Billing Dispute",
+  "Address Change",
+  "Substitution Complaint",
+  "Other",
+]);
 
 type Row = {
   ticket_id: string | number;
@@ -45,39 +46,155 @@ type Row = {
   concerns: unknown;
   sku_categories: unknown;
   skus: string | null;
+  sku_in_question: string | null;
   message_excerpt: string | null;
+  classified_by: string | null;
+  tag_audit: string | null;
+  resolution_applied: string | null;
+  resolution_components: unknown;
+  resolution_cost: number | string | null;
+  resolution_applied_at: Date | string | null;
+  resolution_source: string | null;
+  root_cause: string | null;
+  needs_review: number | boolean | null;
 };
 
 function parseJson<T>(v: unknown, fallback: T): T {
   if (v == null) return fallback;
   if (typeof v === "string") {
-    try { return JSON.parse(v) as T; } catch { return fallback; }
+    try {
+      return JSON.parse(v) as T;
+    } catch {
+      return fallback;
+    }
   }
   return v as T;
 }
 
-export async function GET(request: Request) {
-  try {
-    // Source of truth: is_food_safety + concerns columns populated by the
-    // Haiku classifier (see _classifier.mjs / reporting-sync workflow).
-    // No more LIKE-tag parsing in dashboard SQL. Allow client to request
-    // inclusion of 'Arrived Warm' via query param `includeArrivedWarm=1`.
-    const p = request.nextUrl.searchParams.get('includeArrivedWarm');
-    const includeArrived = p === '1' || p === 'true';
+function itemCategory(name: string): string {
+  const s = name.toLowerCase();
+  if (/(salami|prosciutto|chorizo|sopressata|bresaola|lonza|capocollo|serrano|meat)/.test(s)) {
+    return "Meat";
+  }
+  if (/(cracker|flatbread|almond|olive|fig|honey|jam|cherry|pecan|pretzel|preserve)/.test(s)) {
+    return "Accompaniment";
+  }
+  if (/(brie|cheddar|gouda|ricotta|comte|gruy[eè]re|feta|cheese|toma|blossom|fleece)/.test(s)) {
+    return "Cheese";
+  }
+  return "Multiple Item";
+}
 
-    let whereClause = 'WHERE t.is_food_safety = 1';
+function inferCategories(
+  rawCategories: string[],
+  skuItems: string[],
+  excerpt: string | null,
+): string[] {
+  const mapped = rawCategories.map((c) => {
+    if (c === "Cheese" || c === "Meat" || c === "Accompaniment") return c;
+    if (c === "Crackers" || c === "Treats") return "Accompaniment";
+    if (c === "Cheese & Jam Pairing" || c === "Bundle Add-on" || c === "Box (overall)") {
+      return "Multiple Item";
+    }
+    return c;
+  });
+
+  const unique = Array.from(new Set(mapped.filter(Boolean)));
+  if (!unique.length || unique.every((c) => c === "Multiple Item")) {
+    const haystack = (excerpt ?? "").toLowerCase();
+    const inferred = skuItems
+      .filter((item) => !haystack || haystack.includes(item.toLowerCase()))
+      .map(itemCategory);
+    const fallback = inferred.length ? inferred : skuItems.map(itemCategory);
+    return Array.from(new Set(fallback.filter(Boolean)));
+  }
+
+  return unique;
+}
+
+function deriveRootCause(concerns: string[], tags: string | null): string {
+  const tagText = (tags ?? "").toLowerCase();
+  if (concerns.some((c) => ["Delayed", "Arrived Warm"].includes(c)) || tagText.includes("arrived warm")) {
+    return "Carrier Delay/Temperature";
+  }
+  if (concerns.some((c) => ["Misdelivered", "Not Received", "Wrong Address", "Lost in Transit"].includes(c))) {
+    return "Delivery Error";
+  }
+  if (concerns.some((c) => ["Damaged", "Damaged in Transit"].includes(c))) {
+    return "Transit Damage";
+  }
+  if (concerns.some((c) => FOOD_SAFETY_CONCERNS.has(c))) {
+    return "Product/Packaging";
+  }
+  return "Needs Review";
+}
+
+function deriveNeedsReview(
+  allConcerns: string[],
+  foodSafetyConcerns: string[],
+  skuCategories: string[],
+  row: Row,
+): boolean {
+  if (!foodSafetyConcerns.length) return true;
+  if (!row.message_excerpt) return true;
+  if (row.classified_by && row.classified_by !== "haiku") return true;
+  if (row.tag_audit) return true;
+  if (allConcerns.some((c) => NON_FOOD_CONTEXT.has(c))) return true;
+  if (skuCategories.length !== 1 || skuCategories.includes("Multiple Item")) return true;
+  if (row.needs_review != null) return Boolean(row.needs_review);
+  return false;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const columns = await getTableColumns("gorgias_tickets");
+    const has = (name: string) => columns.has(name);
+    const p = request.nextUrl.searchParams.get("includeArrivedWarm");
+    const includeArrived = p === "1" || p === "true";
+
+    const selectFields = [
+      "t.ticket_id",
+      "t.ticket_created_at",
+      "t.ticket_closed_at",
+      "t.customer_name",
+      "t.customer_email",
+      "t.order_number",
+      "t.tags",
+      "t.status",
+      "t.subject",
+      "t.assignee_email",
+      "t.shopify_order_id",
+      has("sku_in_question") ? "t.sku_in_question" : "NULL AS sku_in_question",
+      has("concerns") ? "t.concerns" : "NULL AS concerns",
+      has("sku_categories") ? "t.sku_categories" : "NULL AS sku_categories",
+      has("message_excerpt") ? "t.message_excerpt" : "NULL AS message_excerpt",
+      has("classified_by") ? "t.classified_by" : "NULL AS classified_by",
+      has("tag_audit") ? "t.tag_audit" : "NULL AS tag_audit",
+      has("resolution_applied") ? "t.resolution_applied" : "NULL AS resolution_applied",
+      has("resolution_components") ? "t.resolution_components" : "NULL AS resolution_components",
+      has("resolution_cost") ? "t.resolution_cost" : "NULL AS resolution_cost",
+      has("resolution_applied_at") ? "t.resolution_applied_at" : "NULL AS resolution_applied_at",
+      has("resolution_source") ? "t.resolution_source" : "NULL AS resolution_source",
+      has("root_cause") ? "t.root_cause" : "NULL AS root_cause",
+      has("needs_review") ? "t.needs_review" : "NULL AS needs_review",
+      "GROUP_CONCAT(DISTINCT COALESCE(s.product_name, s.sku) ORDER BY COALESCE(s.product_name, s.sku) SEPARATOR ' || ') AS skus",
+    ];
+
+    const isFoodSafetyClause = has("is_food_safety") ? "t.is_food_safety = 1" : "1 = 1";
+    let baseWhereClause = `WHERE ${isFoodSafetyClause}`;
     if (!includeArrived) {
-      // Exclude tickets that are explicitly tagged/marked as Arrived Warm so
-      // they are filtered out by default in the dashboard.
-      whereClause += " AND NOT (t.tags LIKE '%Arrived Warm%' OR t.tags LIKE '%Arrived warm%' OR t.concerns LIKE '%Arrived Warm%' OR t.concerns LIKE '%Arrived warm%')";
+      const arrivedWarmChecks = [
+        "t.tags LIKE '%Arrived Warm%'",
+        "t.tags LIKE '%Arrived warm%'",
+      ];
+      if (has("concerns")) {
+        arrivedWarmChecks.push("t.concerns LIKE '%Arrived Warm%'", "t.concerns LIKE '%Arrived warm%'");
+      }
+      baseWhereClause += ` AND NOT (${arrivedWarmChecks.join(" OR ")})`;
     }
 
     const [rows] = await pool.query(`
-      SELECT t.ticket_id, t.ticket_created_at, t.ticket_closed_at, t.customer_name,
-             t.customer_email, t.order_number, t.tags, t.status, t.subject,
-             t.assignee_email, t.shopify_order_id,
-             t.concerns, t.sku_categories, t.message_excerpt,
-             GROUP_CONCAT(DISTINCT COALESCE(s.product_name, s.sku) ORDER BY COALESCE(s.product_name, s.sku) SEPARATOR ' || ') AS skus
+      SELECT ${selectFields.join(",\n             ")}
       FROM gorgias_tickets t
       LEFT JOIN shopify_order_skus s
         ON s.shopify_order_id = t.shopify_order_id
@@ -86,7 +203,7 @@ export async function GET(request: Request) {
         AND s.product_name NOT LIKE '%Custom Box%'
         AND s.product_name NOT LIKE '%Monthly Curation%'
         AND s.product_name NOT LIKE '%AppyHour Box%'
-      ${whereClause}
+      ${baseWhereClause}
       GROUP BY t.ticket_id
       ORDER BY t.ticket_created_at DESC
       LIMIT 1000
@@ -94,38 +211,27 @@ export async function GET(request: Request) {
 
     const tickets = (rows as Row[]).map((r) => {
       const allConcerns = parseJson<string[]>(r.concerns, []);
-      // Restrict to food-safety concerns only — Cancellation / Billing /
-      // Subscription belong on the cost page, not in this donut.
       const concerns = allConcerns.filter((c) => FOOD_SAFETY_CONCERNS.has(c));
-
-      // Collapse Haiku's SKU categories down to the 4 buckets used by the
-      // food-safety sheet: Cheese / Meat / Accompaniment / Multiple Item.
-      // Crackers and Treats are accompaniments; Pairings/Bundles/Box span
-      // multiple categories.
-      const SHEET_CATEGORY: Record<string, string> = {
-        "Cheese": "Cheese",
-        "Meat": "Meat",
-        "Accompaniment": "Accompaniment",
-        "Crackers": "Accompaniment",
-        "Treats": "Accompaniment",
-        "Cheese & Jam Pairing": "Multiple Item",
-        "Bundle Add-on": "Multiple Item",
-        "Box (overall)": "Multiple Item",
-      };
-      const rawCategories = parseJson<string[]>(r.sku_categories, []);
-      const skuCategories = Array.from(new Set(
-        rawCategories.map((c) => SHEET_CATEGORY[c] ?? c)
-      ));
-      const rawSkus = r.skus;
-      const skuItems = rawSkus
-        ? rawSkus.split(" || ").map((s) => s.trim().replace(/\s*\*+\s*$/, "")).filter(Boolean)
+      const skuItems = r.skus
+        ? r.skus.split(" || ").map((s) => s.trim().replace(/\s*\*+\s*$/, "")).filter(Boolean)
         : [];
+      const rawCategories = parseJson<string[]>(r.sku_categories, []);
+      const skuCategories = inferCategories(rawCategories, skuItems, r.message_excerpt);
+
+      const parsed = parseResolution(r.resolution_applied, r.tags);
+      const dbResolutionCost = Number(r.resolution_cost ?? 0);
+      const resolutionCost = dbResolutionCost > 0 ? dbResolutionCost : parsed.cost;
+      const resolutionComponents = parseJson<string[]>(r.resolution_components, parsed.components);
+      const resolutionSource = (r.resolution_source as "db" | "tags" | "derived" | null) ?? parsed.source;
+      const rootCause = r.root_cause ?? deriveRootCause(allConcerns, r.tags);
+      const needsReview = deriveNeedsReview(allConcerns, concerns, skuCategories, r);
+
       return {
-        idNumber: r.ticket_id,
+        idNumber: Number(r.ticket_id),
         shopifyOrderNumber: r.order_number ?? String(r.ticket_id),
         dateOfComplaint: r.ticket_created_at,
         customerName: r.customer_name ?? r.customer_email,
-        skuInQuestion: skuCategories.length ? skuCategories.join(", ") : (skuItems.length ? skuItems.join(", ") : null),
+        skuInQuestion: skuItems.length ? skuItems.join(", ") : (r.sku_in_question ?? (skuCategories.join(", ") || null)),
         skuItems,
         skuCategories,
         packagingType: null,
@@ -136,10 +242,18 @@ export async function GET(request: Request) {
         gorgiasLink: `https://appyhour.gorgias.com/app/ticket/${r.ticket_id}`,
         ceoComments: null,
         direction: null,
-        correctiveAction: r.assignee_email ?? null,
-        dateResolved: r.ticket_closed_at,
-        resolutionCost: inferResolutionCost(concerns),
+        correctiveAction: parsed.label,
+        resolutionApplied: r.resolution_applied ?? parsed.label,
+        resolutionSource,
+        resolutionComponents,
+        dateResolved: r.resolution_applied_at ?? r.ticket_closed_at,
+        resolutionCost: parsed.hasAppliedResolution ? resolutionCost : 0,
+        hasAppliedResolution: parsed.hasAppliedResolution,
         isResolved: r.status === "closed",
+        rootCause,
+        needsReview,
+        tags: r.tags,
+        messageExcerpt: r.message_excerpt,
       };
     });
 

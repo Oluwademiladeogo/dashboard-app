@@ -15,9 +15,17 @@ export interface FoodSafetyTicket {
   ceoComments: string | null;
   direction: string | null;
   correctiveAction: string | null;
+  resolutionApplied: string | null;
+  resolutionSource: "db" | "tags" | "derived" | null;
+  resolutionComponents: string[];
   dateResolved: Date | null;
   resolutionCost: number;
+  hasAppliedResolution: boolean;
   isResolved: boolean;
+  rootCause: string | null;
+  needsReview: boolean;
+  tags: string | null;
+  messageExcerpt: string | null;
 }
 
 export interface OpsTicket {

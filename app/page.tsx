@@ -100,7 +100,7 @@ export default function Home() {
           <div className="text-sm text-blue-800">
             <p className="font-medium">Data Source</p>
             <p className="text-blue-700/80">
-              Data is read directly from the local SQLite warehouse (`data.db`) via dashboard API routes.
+              Data is read from the managed MySQL reporting warehouse via dashboard API routes.
             </p>
           </div>
         </div>

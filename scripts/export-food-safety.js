@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const loadRootEnv = require('./load-root-env.cjs');
 const rawArgs = process.argv.slice(2);
 const argv = {};
 for (let i = 0; i < rawArgs.length; i++) {
@@ -48,7 +49,8 @@ async function main() {
 
     const sql = `
       SELECT t.ticket_id, t.ticket_created_at, t.customer_name, t.customer_email, t.order_number,
-             t.tags, t.status, t.concerns, t.sku_categories,
+             t.tags, t.status, t.concerns, t.sku_categories, t.resolution_applied,
+             t.resolution_cost, t.root_cause, t.needs_review,
              GROUP_CONCAT(DISTINCT COALESCE(s.product_name, s.sku) SEPARATOR ' || ') AS skus
       FROM gorgias_tickets t
       LEFT JOIN shopify_order_skus s ON s.shopify_order_id = t.shopify_order_id
@@ -61,7 +63,7 @@ async function main() {
     const [rows] = await pool.query(sql);
 
     const header = [
-      'ticket_id','ticket_created_at','customer_name','customer_email','order_number','tags','status','concerns','sku_categories','skus'
+      'ticket_id','ticket_created_at','customer_name','customer_email','order_number','tags','status','concerns','sku_categories','resolution_applied','resolution_cost','root_cause','needs_review','skus'
     ];
 
     const outPath = path.resolve(process.cwd(), out);
@@ -79,6 +81,10 @@ async function main() {
         quote(r.status),
         quote(typeof r.concerns === 'string' ? r.concerns : JSON.stringify(r.concerns)),
         quote(typeof r.sku_categories === 'string' ? r.sku_categories : JSON.stringify(r.sku_categories)),
+        quote(r.resolution_applied),
+        r.resolution_cost ?? '',
+        quote(r.root_cause),
+        r.needs_review ?? '',
         quote(r.skus),
       ].join(',');
       stream.write(line + '\n');

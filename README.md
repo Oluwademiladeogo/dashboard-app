@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Elevate Foods dashboard
 
-## Getting Started
+Next.js dashboard for internal customer-service, food-safety, and cost reporting.
+The app reads the managed MySQL reporting warehouse populated by the n8n workflows; it no longer reads CSV snapshots or a local SQLite database.
 
-First, run the development server:
+## Local development
+
+From this submodule directory:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The scripts load the **repo-root** `.env` file through `scripts/with-root-env.cjs`, so there is one local env source for the monorepo. Start from the root `.env.example` file.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Required app env vars:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `DB_SSL`
+- `DB_SSL_REJECT_UNAUTHORIZED`
 
-## Learn More
+## Build
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm build
+pnpm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Data flow
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. `Automations/n8n-reporting-sync` syncs Gorgias + Shopify data into MySQL.
+2. Dashboard API routes read the MySQL warehouse.
+3. Client pages consume `/api/*` endpoints.
 
-## Deploy on Vercel
+The dashboard-side resolution parser is centralized in `lib/resolution.ts`; classification is owned by the reporting-sync workflow rather than by a second dashboard backfill script.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The dashboard is deployed with the parent repo through the root `.github/workflows/deploy.yml` workflow. The dashboard submodule must be committed before the parent repo updates its submodule pointer.
+
+See the parent repo `DEPLOYMENT.md` for Droplet secrets, restart-command configuration, and the n8n release checklist.

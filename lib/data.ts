@@ -31,9 +31,17 @@ type FoodSafetyApiRow = {
   ceoComments?: string | null;
   direction?: string | null;
   correctiveAction?: string | null;
+  resolutionApplied?: string | null;
+  resolutionSource?: "db" | "tags" | "derived" | null;
+  resolutionComponents?: string[] | null;
   dateResolved?: string | null;
   resolutionCost?: number;
+  hasAppliedResolution?: boolean;
   isResolved?: boolean;
+  rootCause?: string | null;
+  needsReview?: boolean;
+  tags?: string | null;
+  messageExcerpt?: string | null;
 };
 
 type OpsApiRow = {
@@ -88,9 +96,17 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     ceoComments: str(r.ceoComments),
     direction: str(r.direction),
     correctiveAction: str(r.correctiveAction),
+    resolutionApplied: str(r.resolutionApplied),
+    resolutionSource: r.resolutionSource ?? null,
+    resolutionComponents: Array.isArray(r.resolutionComponents) ? r.resolutionComponents : [],
     dateResolved: parseDate(r.dateResolved),
     resolutionCost: typeof r.resolutionCost === "number" ? r.resolutionCost : 0,
+    hasAppliedResolution: Boolean(r.hasAppliedResolution),
     isResolved: Boolean(r.isResolved),
+    rootCause: str(r.rootCause),
+    needsReview: Boolean(r.needsReview),
+    tags: str(r.tags),
+    messageExcerpt: str(r.messageExcerpt),
   }));
 }
 
@@ -120,9 +136,9 @@ export async function fetchCostLookup(): Promise<CostLookupRow[]> {
     { resolution: "full reship", unitCost: 65 },
     { resolution: "partial reship", unitCost: 30 },
     { resolution: "full refund", unitCost: 65 },
-    { resolution: "extra cheese", unitCost: 5.5 },
-    { resolution: "extra meat", unitCost: 4 },
-    { resolution: "extra accompaniment", unitCost: 2.5 },
+    { resolution: "extra cheese", unitCost: 10 },
+    { resolution: "extra meat", unitCost: 10 },
+    { resolution: "extra accompaniment", unitCost: 6 },
     { resolution: "information given", unitCost: 0 },
   ];
 }
