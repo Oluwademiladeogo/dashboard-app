@@ -181,7 +181,12 @@ export async function GET(request: NextRequest) {
     ];
 
     const isFoodSafetyClause = has("is_food_safety") ? "t.is_food_safety = 1" : "1 = 1";
-    let baseWhereClause = `WHERE ${isFoodSafetyClause}`;
+    const testCustomerFilter = `
+      AND (t.customer_email IS NULL OR t.customer_email <> 'reply@notification.stamped.io')
+      AND (t.customer_name IS NULL OR t.customer_name NOT REGEXP '^(Demilade Test|Test Customer|Stamped\\\\.io)')
+      AND (t.customer_email IS NULL OR t.customer_email NOT LIKE 'bickerstethdemilade+%@gmail.com')
+    `.trim();
+    let baseWhereClause = `WHERE ${isFoodSafetyClause} ${testCustomerFilter}`;
     if (!includeArrived) {
       const arrivedWarmChecks = [
         "t.tags LIKE '%Arrived Warm%'",

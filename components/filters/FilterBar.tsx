@@ -9,7 +9,7 @@ function ToggleChip({
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+      className={`cursor-pointer px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
         active
           ? "bg-blue-600 text-white border-blue-600 shadow-sm"
           : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
@@ -56,7 +56,7 @@ export default function FilterBar() {
       {hasActiveFilters && (
         <button
           onClick={resetFilters}
-          className="ml-auto text-xs text-slate-400 hover:text-slate-600"
+          className="cursor-pointer ml-auto text-xs text-slate-400 hover:text-slate-600"
         >
           Reset filters
         </button>

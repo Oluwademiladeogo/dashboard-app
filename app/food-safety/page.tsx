@@ -18,7 +18,6 @@ import WeeklyTrend from "@/components/charts/WeeklyTrend";
 import DonutChart from "@/components/charts/DonutChart";
 
 type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly";
-type ViewMode = "overview" | "concern-analysis";
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 interface StatProps {
@@ -87,30 +86,6 @@ function Card({
   );
 }
 
-// ── View selector chips ──────────────────────────────────────────────────────
-function ViewChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-        active
-          ? "bg-blue-600 text-white border-blue-600"
-          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 // ── Time period selector ─────────────────────────────────────────────────────
 function PeriodSelector({
   value,
@@ -131,7 +106,7 @@ function PeriodSelector({
         <button
           key={p.key}
           onClick={() => onChange(p.key)}
-          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
             value === p.key
               ? "bg-white text-slate-900 shadow-sm"
               : "text-slate-500 hover:text-slate-700"
@@ -271,7 +246,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
         <span className="text-xs text-slate-400 shrink-0">{sorted.length} records</span>
         <button
           onClick={downloadCsv}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-all"
+          className="cursor-pointer shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-all"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -414,7 +389,6 @@ export default function FoodSafetyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("weekly");
   const filters = useFilterStore();
 
@@ -506,17 +480,6 @@ export default function FoodSafetyPage() {
           </div>
         </div>
 
-        {/* View mode selector */}
-        <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-lg p-3">
-          <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">View</span>
-          <ViewChip label="Overview" active={viewMode === "overview"} onClick={() => setViewMode("overview")} />
-          <ViewChip
-            label="Concern Analysis"
-            active={viewMode === "concern-analysis"}
-            onClick={() => setViewMode("concern-analysis")}
-          />
-        </div>
-
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard
@@ -561,42 +524,25 @@ export default function FoodSafetyPage() {
           <WeeklyTrend data={trendData} />
         </Card>
 
-        {/* Side-by-side: Concern Breakdown and Top 10 SKUs */}
-        {viewMode === "overview" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card title="Concern Breakdown" sub="By complaint count">
-              <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-            </Card>
-            <Card title="Top 10 Products by Complaint Count" sub="Product names where linked; category fallback otherwise">
-              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-            </Card>
-          </div>
-        )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card title="Concern Breakdown" sub="By complaint count">
+            <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
+          </Card>
+          <Card title="Concern Cost Impact" sub="Estimated total resolution cost by concern type">
+            <HorizontalBar
+              data={concerns.map((c) => ({
+                label: c.concern,
+                value: Math.round(c.count * kpis.avgCost),
+              }))}
+              color="#8b5cf6"
+              formatter={(v) => `$${v.toLocaleString()}`}
+            />
+          </Card>
+        </div>
 
-        {/* Concern Analysis view */}
-        {viewMode === "concern-analysis" && (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card title="Concern Breakdown" sub="By complaint count">
-                <DonutChart data={concerns.map((c) => ({ name: c.concern, value: c.count }))} />
-              </Card>
-              <Card title="Concern Cost Impact" sub="Estimated total resolution cost by concern type">
-                <HorizontalBar
-                  data={concerns.map((c) => ({
-                    label: c.concern,
-                    value: Math.round(c.count * kpis.avgCost),
-                  }))}
-                  color="#8b5cf6"
-                  formatter={(v) => `$${v.toLocaleString()}`}
-                />
-              </Card>
-            </div>
-
-            <Card title="Top 10 Products by Complaint Count" sub="Product names where linked; category fallback otherwise">
-              <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
-            </Card>
-          </>
-        )}
+        <Card title="Top 10 Products by Complaint Count" sub="Product names where linked; category fallback otherwise">
+          <HorizontalBar data={sku.map((s) => ({ label: s.sku, value: s.count }))} color="#3b82f6" />
+        </Card>
 
         {/* Ticket table */}
         <Card title="Complaint Log" sub="Click a Shopify order number to open the Gorgias ticket">

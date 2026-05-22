@@ -86,6 +86,8 @@ export function parseResolution(
   ]);
   const hasCredit = text.includes("credit");
   const hasRefund = text.includes("refund");
+  const hasAppliedCredit = hasAny(text, ["applied credit", "credit applied", "store credit"]);
+  const hasCancelSub = hasAny(text, ["cancel sub", "cancelled sub", "subscription cancel"]);
 
   if (hasFullReship) components.push("Full Reship");
   if (hasPartialReship) components.push("Partial Reship");
@@ -135,6 +137,18 @@ export function parseResolution(
       const amount = Number.parseFloat(amountMatch[1]);
       normalized = hasRefund ? "refund" : hasCredit ? "credit" : "manual adjustment";
       cost = Number.isFinite(amount) ? amount : 0;
+    } else if (hasAppliedCredit) {
+      normalized = "applied credit";
+      cost = 10;
+    } else if (hasRefund) {
+      normalized = "refund";
+      cost = PARTIAL_RESHIP_COST;
+    } else if (hasCredit) {
+      normalized = "credit";
+      cost = 10;
+    } else if (hasCancelSub) {
+      normalized = "cancel subscription";
+      cost = 0;
     }
   }
 
