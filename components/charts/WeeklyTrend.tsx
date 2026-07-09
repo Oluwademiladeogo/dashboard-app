@@ -24,18 +24,17 @@ const CustomTooltip = ({
   active, payload, label,
 }: {
   active?: boolean;
-  payload?: { name: string; value: number; color: string }[];
+  payload?: { name: string; value: number; color: string; dataKey?: string }[];
   label?: string;
 }) => {
   if (!active || !payload?.length) return null;
+  const count = payload.find((p) => p.dataKey === "count")?.value ?? 0;
+  const cost = payload.find((p) => p.dataKey === "cost")?.value ?? 0;
   return (
     <div className="bg-white border border-slate-200 rounded-md shadow-sm px-3 py-2 text-xs space-y-1">
       <p className="font-medium text-slate-500">Week of {shortWeek(label ?? "")}</p>
-      {payload.map((p) => (
-        <p key={p.name} style={{ color: p.color }} className="font-semibold">
-          {p.name === "cost" ? `$${p.value.toFixed(0)}` : p.value} {p.name === "cost" ? "cost" : "complaints"}
-        </p>
-      ))}
+      <p className="text-blue-600 font-semibold">{count} complaints</p>
+      <p className="text-amber-500 font-semibold">${cost.toFixed(0)} resolved cost</p>
     </div>
   );
 };
@@ -54,7 +53,16 @@ export default function WeeklyTrend({ data }: Props) {
           interval="preserveStartEnd"
         />
         <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
-        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} width={40} />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 10, fill: "#94a3b8" }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v) => `$${v}`}
+          width={44}
+          domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax * 1.15))]}
+        />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={7} />
         <Bar yAxisId="left" dataKey="count" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={24} name="count" />
@@ -74,10 +82,11 @@ export default function WeeklyTrend({ data }: Props) {
           type="monotone"
           dataKey="cost"
           stroke="#f59e0b"
-          strokeWidth={1.5}
+          strokeWidth={2.25}
           strokeDasharray="4 3"
-          dot={false}
-          name="cost"
+          dot={{ r: 3, fill: "#f59e0b", strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+          name="resolved cost"
         />
       </ComposedChart>
     </ResponsiveContainer>

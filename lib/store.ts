@@ -7,7 +7,6 @@ import type { FilterState } from "./types";
 interface FilterStore extends FilterState {
   setDateFrom: (d: Date | null) => void;
   setDateTo: (d: Date | null) => void;
-  setPackagingTypes: (types: string[]) => void;
   setCarriers: (carriers: string[]) => void;
   setDestinationStates: (states: string[]) => void;
   setIncludeArrivedWarm: (v: boolean) => void;
@@ -18,7 +17,6 @@ const defaultState = (): FilterState => ({
   dateFrom: null,
   dateTo: null,
   fulfillmentCenters: [],
-  packagingTypes: [],
   carriers: [],
   destinationStates: [],
   includeArrivedWarm: false,
@@ -30,7 +28,6 @@ export const useFilterStore = create<FilterStore>()(
       ...defaultState(),
       setDateFrom: (d) => set({ dateFrom: d }),
       setDateTo: (d) => set({ dateTo: d }),
-      setPackagingTypes: (types) => set({ packagingTypes: types }),
       setCarriers: (carriers) => set({ carriers }),
       setDestinationStates: (states) => set({ destinationStates: states }),
       setIncludeArrivedWarm: (v) => set({ includeArrivedWarm: v }),

@@ -7,10 +7,9 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 const sslEnabled = envBool("DB_SSL", true);
-// DigitalOcean's managed MySQL supports TLS. Keep the historical local default
-// (`false`) explicit for compatibility, but allow production to enforce CA
-// validation with DB_SSL_REJECT_UNAUTHORIZED=true once its CA is installed.
-const rejectUnauthorized = envBool("DB_SSL_REJECT_UNAUTHORIZED", false);
+// DigitalOcean's managed MySQL supports TLS. Validate certificates by default;
+// local setups that intentionally use self-signed certs can opt out explicitly.
+const rejectUnauthorized = envBool("DB_SSL_REJECT_UNAUTHORIZED", true);
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,

@@ -154,7 +154,7 @@ export function parseResolution(
 
   const label = normalized
     ? unique(components).join(" + ") || normalized
-    : explicit || fallback;
+    : explicit || null;
 
   return {
     label,

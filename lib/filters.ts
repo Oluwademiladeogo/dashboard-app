@@ -9,13 +9,6 @@ export function applyFoodSafetyFilters(
       return false;
     if (filters.dateTo && t.dateOfComplaint && t.dateOfComplaint > filters.dateTo)
       return false;
-    if (
-      filters.packagingTypes.length > 0 &&
-      !filters.packagingTypes.some((p) =>
-        (t.packagingType ?? "").toLowerCase().includes(p.toLowerCase())
-      )
-    )
-      return false;
     return true;
   });
 }

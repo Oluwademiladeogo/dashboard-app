@@ -2,11 +2,12 @@ export interface FoodSafetyTicket {
   idNumber: number | null;
   shopifyOrderNumber: string | null;
   dateOfComplaint: Date | null;
+  orderFulfilledAt: Date | null;
   customerName: string | null;
   skuInQuestion: string | null;
   skuItems: string[];
+  skuCodes: string[];
   skuCategories: string[];
-  packagingType: string | null;
   fulfillmentCenter: string | null;
   carrierTrackingNumber: string | null;
   perceivedConcern: string | null;
@@ -65,7 +66,6 @@ export interface FilterState {
   dateFrom: Date | null;
   dateTo: Date | null;
   fulfillmentCenters: string[];
-  packagingTypes: string[];
   carriers: string[];
   destinationStates: string[];
   includeArrivedWarm?: boolean;

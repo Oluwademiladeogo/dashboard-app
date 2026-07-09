@@ -7,6 +7,23 @@
 //   node scripts/with-root-env.cjs node scripts/backfill-resolutions.cjs --write    # apply
 
 const mysql = require("mysql2/promise");
+const fs = require("fs");
+
+function loadEnv(file) {
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!m) continue;
+    let value = m[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[m[1]]) process.env[m[1]] = value;
+  }
+}
+
+loadEnv(".env.local");
+loadEnv("/opt/n8n/.env");
 
 const RESHIP_COST = 65;
 const PARTIAL_RESHIP_COST = 30;

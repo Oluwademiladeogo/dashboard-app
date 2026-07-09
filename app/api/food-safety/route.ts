@@ -34,6 +34,7 @@ const NON_FOOD_CONTEXT = new Set([
 type Row = {
   ticket_id: string | number;
   ticket_created_at: Date | string | null;
+  order_fulfilled_at: Date | string | null;
   ticket_closed_at: Date | string | null;
   customer_name: string | null;
   customer_email: string | null;
@@ -45,7 +46,6 @@ type Row = {
   shopify_order_id: string | null;
   concerns: unknown;
   sku_categories: unknown;
-  skus: string | null;
   sku_in_question: string | null;
   message_excerpt: string | null;
   classified_by: string | null;
@@ -59,6 +59,13 @@ type Row = {
   needs_review: number | boolean | null;
 };
 
+type SkuRow = {
+  shopify_order_id: string | number | null;
+  order_number: string | number | null;
+  sku: string | null;
+  product_name: string | null;
+};
+
 function parseJson<T>(v: unknown, fallback: T): T {
   if (v == null) return fallback;
   if (typeof v === "string") {
@@ -69,6 +76,22 @@ function parseJson<T>(v: unknown, fallback: T): T {
     }
   }
   return v as T;
+}
+
+function isSkuCode(v: string | null): boolean {
+  return Boolean(v && /^[A-Z0-9]+(?:-[A-Z0-9]+)+(?:\s*,\s*[A-Z0-9]+(?:-[A-Z0-9]+)+)*$/.test(v.trim()));
+}
+
+function extractOrderNumber(text: string | null): string | null {
+  if (!text) return null;
+  const match = text.match(/(?:order\s*#?\s*|#)(\d{5,})/i) ?? text.match(/\border\s+(\d{5,})\b/i);
+  return match?.[1] ?? null;
+}
+
+function key(v: string | number | null | undefined): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
 }
 
 function itemCategory(name: string): string {
@@ -155,6 +178,7 @@ export async function GET(request: NextRequest) {
     const selectFields = [
       "t.ticket_id",
       "t.ticket_created_at",
+      has("order_fulfilled_at") ? "t.order_fulfilled_at" : "NULL AS order_fulfilled_at",
       "t.ticket_closed_at",
       "t.customer_name",
       "t.customer_email",
@@ -177,7 +201,6 @@ export async function GET(request: NextRequest) {
       has("resolution_source") ? "t.resolution_source" : "NULL AS resolution_source",
       has("root_cause") ? "t.root_cause" : "NULL AS root_cause",
       has("needs_review") ? "t.needs_review" : "NULL AS needs_review",
-      "GROUP_CONCAT(DISTINCT COALESCE(s.product_name, s.sku) ORDER BY COALESCE(s.product_name, s.sku) SEPARATOR ' || ') AS skus",
     ];
 
     const isFoodSafetyClause = has("is_food_safety") ? "t.is_food_safety = 1" : "1 = 1";
@@ -201,25 +224,66 @@ export async function GET(request: NextRequest) {
     const [rows] = await pool.query(`
       SELECT ${selectFields.join(",\n             ")}
       FROM gorgias_tickets t
-      LEFT JOIN shopify_order_skus s
-        ON s.shopify_order_id = t.shopify_order_id
-        AND s.sku NOT LIKE 'AHB-%' AND s.sku NOT LIKE 'PK-%'
-        AND s.product_name NOT LIKE '%Tasting Guide%'
-        AND s.product_name NOT LIKE '%Custom Box%'
-        AND s.product_name NOT LIKE '%Monthly Curation%'
-        AND s.product_name NOT LIKE '%AppyHour Box%'
       ${baseWhereClause}
-      GROUP BY t.ticket_id
       ORDER BY t.ticket_created_at DESC
       LIMIT 1000
     `);
 
-    const tickets = (rows as Row[]).map((r) => {
+    const ticketRows = rows as Row[];
+    const extractedOrderNumbers = new Map<string | number, string | null>();
+    const shopifyOrderIds = Array.from(new Set(ticketRows.map((r) => key(r.shopify_order_id)).filter(Boolean)));
+    const orderNumbers = Array.from(new Set(ticketRows
+      .filter((r) => !key(r.shopify_order_id))
+      .map((r) => key(r.order_number) ?? extractOrderNumber(r.message_excerpt))
+      .filter(Boolean)));
+
+    ticketRows.forEach((r) => {
+      extractedOrderNumbers.set(r.ticket_id, extractOrderNumber(r.message_excerpt));
+    });
+
+    const skuConditions: string[] = [];
+    const skuParams: (string[] | number[])[] = [];
+    if (shopifyOrderIds.length) {
+      skuConditions.push("shopify_order_id IN (?)");
+      skuParams.push(shopifyOrderIds as string[]);
+    }
+    if (orderNumbers.length) {
+      skuConditions.push("order_number IN (?)");
+      skuParams.push(orderNumbers as string[]);
+    }
+
+    const [skuRows] = skuConditions.length
+      ? await pool.query(`
+          SELECT shopify_order_id, order_number, sku, product_name
+          FROM shopify_order_skus
+          WHERE (${skuConditions.join(" OR ")})
+        `, skuParams)
+      : [[]];
+
+    const skusByShopifyId = new Map<string, SkuRow[]>();
+    const skusByOrderNumber = new Map<string, SkuRow[]>();
+    (skuRows as SkuRow[]).forEach((sku) => {
+      const shopifyId = key(sku.shopify_order_id);
+      const orderNumber = key(sku.order_number);
+      if (shopifyId) skusByShopifyId.set(shopifyId, [...(skusByShopifyId.get(shopifyId) ?? []), sku]);
+      if (orderNumber) skusByOrderNumber.set(orderNumber, [...(skusByOrderNumber.get(orderNumber) ?? []), sku]);
+    });
+
+    const tickets = ticketRows.map((r) => {
       const allConcerns = parseJson<string[]>(r.concerns, []);
       const concerns = allConcerns.filter((c) => FOOD_SAFETY_CONCERNS.has(c));
-      const skuItems = r.skus
-        ? r.skus.split(" || ").map((s) => s.trim().replace(/\s*\*+\s*$/, "")).filter(Boolean)
-        : [];
+      const fallbackSku = isSkuCode(r.sku_in_question) ? r.sku_in_question : null;
+      const extractedOrderNumber = extractedOrderNumbers.get(r.ticket_id) ?? null;
+      const shopifyId = key(r.shopify_order_id);
+      const linkedSkus = shopifyId
+        ? skusByShopifyId.get(shopifyId) ?? []
+        : skusByOrderNumber.get(key(r.order_number) ?? extractedOrderNumber ?? "") ?? [];
+      const skuItems = Array.from(new Set(linkedSkus
+        .map((s) => (s.product_name ?? s.sku ?? "").trim().replace(/\s*\*+\s*$/, ""))
+        .filter(Boolean)));
+      const skuCodes = Array.from(new Set(linkedSkus
+        .map((s) => (s.sku ?? "").trim())
+        .filter(Boolean)));
       const rawCategories = parseJson<string[]>(r.sku_categories, []);
       const skuCategories = inferCategories(rawCategories, skuItems, r.message_excerpt);
 
@@ -233,13 +297,14 @@ export async function GET(request: NextRequest) {
 
       return {
         idNumber: Number(r.ticket_id),
-        shopifyOrderNumber: r.order_number ?? String(r.ticket_id),
+        shopifyOrderNumber: r.order_number ?? extractedOrderNumber,
         dateOfComplaint: r.ticket_created_at,
+        orderFulfilledAt: r.order_fulfilled_at,
         customerName: r.customer_name ?? r.customer_email,
-        skuInQuestion: skuItems.length ? skuItems.join(", ") : (r.sku_in_question ?? (skuCategories.join(", ") || null)),
+        skuInQuestion: skuCodes.length ? skuCodes.join(", ") : fallbackSku,
         skuItems,
+        skuCodes,
         skuCategories,
-        packagingType: null,
         fulfillmentCenter: null,
         carrierTrackingNumber: null,
         perceivedConcern: concerns.length ? concerns.join(", ") : null,

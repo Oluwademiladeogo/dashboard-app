@@ -18,11 +18,12 @@ type FoodSafetyApiRow = {
   idNumber?: number | null;
   shopifyOrderNumber?: string | null;
   dateOfComplaint?: string | null;
+  orderFulfilledAt?: string | null;
   customerName?: string | null;
   skuInQuestion?: string | null;
   skuItems?: string[] | null;
+  skuCodes?: string[] | null;
   skuCategories?: string[] | null;
-  packagingType?: string | null;
   fulfillmentCenter?: string | null;
   carrierTrackingNumber?: string | null;
   perceivedConcern?: string | null;
@@ -83,11 +84,12 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     idNumber: r.idNumber ?? null,
     shopifyOrderNumber: str(r.shopifyOrderNumber),
     dateOfComplaint: parseDate(r.dateOfComplaint),
+    orderFulfilledAt: parseDate(r.orderFulfilledAt),
     customerName: str(r.customerName),
     skuInQuestion: str(r.skuInQuestion),
     skuItems: Array.isArray(r.skuItems) ? r.skuItems : [],
+    skuCodes: Array.isArray(r.skuCodes) ? r.skuCodes : [],
     skuCategories: Array.isArray(r.skuCategories) ? r.skuCategories : [],
-    packagingType: str(r.packagingType),
     fulfillmentCenter: str(r.fulfillmentCenter),
     carrierTrackingNumber: str(r.carrierTrackingNumber),
     perceivedConcern: str(r.perceivedConcern),
