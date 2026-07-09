@@ -21,6 +21,12 @@ export default function TopNav() {
       >
         Cost of Issues
       </Link>
+      <Link
+        href="/cs"
+        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
+      >
+        CS Metrics
+      </Link>
     </nav>
   );
 }
