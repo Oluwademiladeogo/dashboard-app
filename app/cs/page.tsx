@@ -185,12 +185,13 @@ export default function CsMetricsPage() {
   const metrics = loading ? null : result?.metrics ?? null;
   const windows = useMemo(() => result?.windows ?? [], [result]);
 
-  useEffect(() => {
+  const loadReports = useCallback(() => {
     fetch("/api/cs-reports")
       .then((r) => r.json())
       .then((data) => setReports(data.files ?? []))
       .catch(() => {});
   }, []);
+  useEffect(() => { loadReports(); }, [loadReports]);
 
   const weekOptions = useMemo(
     () => windows.filter((w) => w.window_kind === "week"),
@@ -403,7 +404,9 @@ export default function CsMetricsPage() {
 
         <ScheduleEditor seedAgents={metrics ? Object.entries(metrics.agents).map(([email, a]) => ({ email, name: a.name })) : []} />
 
-        <Card title="Generated Reports" sub="weekly Excel + PDF from the droplet cron">
+        <GenerateReport onGenerated={loadReports} />
+
+        <Card title="Generated Reports" sub="weekly Excel + PDF from the droplet cron, plus anything you generate below">
           {reports.length === 0 ? (
             <p className="text-xs text-slate-400">No generated files yet.</p>
           ) : (
@@ -580,4 +583,115 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
 function defaultStatus(date: string) {
   const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
   return dow === 0 || dow === 6 ? "off" : "present";
+}
+
+// ── on-demand report generator ────────────────────────────────────────────────
+interface JobState { id: string; status: string; files?: string[]; error?: string }
+
+function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
+  const [today] = useState(() => isoDate(new Date()));
+  const [start, setStart] = useState(() => isoDate(new Date(Date.now() - 6 * 86400000)));
+  const [end, setEnd] = useState(() => isoDate(new Date()));
+  const [surveys, setSurveys] = useState(true);
+  const [job, setJob] = useState<JobState | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const poll = useCallback((id: string, onDone: () => void) => {
+    let tries = 0;
+    const iv = setInterval(async () => {
+      tries += 1;
+      if (tries > 480) { // ~40 min ceiling
+        clearInterval(iv);
+        setJob({ id, status: "error", error: "timed out" });
+        setBusy(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/cs-generate?job=${id}`);
+        const data = await res.json();
+        if (data.status === "done") {
+          clearInterval(iv);
+          setJob({ id, status: "done", files: data.files });
+          setBusy(false);
+          onDone();
+        } else if (data.status === "error") {
+          clearInterval(iv);
+          setJob({ id, status: "error", error: `exit code ${data.code ?? "?"}` });
+          setBusy(false);
+        }
+      } catch { /* transient — keep polling */ }
+    }, 5000);
+  }, []);
+
+  const generate = async () => {
+    setBusy(true);
+    setJob(null);
+    // UI dates are inclusive; the collector's end is exclusive → add a day.
+    const endEx = isoDate(new Date(Date.parse(`${end}T00:00:00Z`) + 86400000));
+    try {
+      const res = await fetch("/api/cs-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start, end: endEx, surveys }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setJob({ id: "", status: "error", error: data.error });
+        setBusy(false);
+        return;
+      }
+      setJob({ id: data.jobId, status: "running" });
+      poll(data.jobId, onGenerated);
+    } catch {
+      setJob({ id: "", status: "error", error: "request failed" });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Generate a Report" sub="Build the Excel + PDF for any date range, on demand (separate from the weekly cron)">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-slate-600">
+          From
+          <input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)}
+            className="block mt-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white" />
+        </label>
+        <label className="text-xs text-slate-600">
+          To <span className="text-slate-400">(inclusive)</span>
+          <input type="date" value={end} min={start} max={today} onChange={(e) => setEnd(e.target.value)}
+            className="block mt-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white" />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2">
+          <input type="checkbox" checked={surveys} onChange={(e) => setSurveys(e.target.checked)} />
+          Include CSAT <span className="text-slate-400">(slower)</span>
+        </label>
+        <button onClick={generate} disabled={busy}
+          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium disabled:opacity-50">
+          {busy ? "Generating…" : "Generate"}
+        </button>
+      </div>
+
+      {job?.status === "running" && (
+        <p className="text-xs text-slate-500 mt-3">
+          Collecting from Gorgias and building the report… this can take a few minutes
+          {surveys ? " (longer with CSAT on)" : ""}. You can keep using the page.
+        </p>
+      )}
+      {job?.status === "done" && (
+        <div className="mt-3 text-xs">
+          <p className="text-emerald-700 font-medium mb-1.5">Report ready:</p>
+          <div className="flex flex-wrap gap-4">
+            {(job.files ?? []).map((f) => (
+              <a key={f} href={`/api/cs-reports?file=${encodeURIComponent(f)}`} className="text-blue-700 hover:underline">{f}</a>
+            ))}
+          </div>
+        </div>
+      )}
+      {job?.status === "error" && (
+        <p className="text-xs text-red-600 mt-3">
+          Generation failed{job.error ? `: ${job.error}` : ""}. Check the droplet logs (logs/ondemand-*.log).
+        </p>
+      )}
+    </Card>
+  );
 }
