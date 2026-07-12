@@ -59,9 +59,9 @@ interface ReportFile {
 }
 
 const KINDS = [
-  { id: "7d", label: "Last 7 Days" },
-  { id: "14d", label: "Last 14 Days" },
-  { id: "week", label: "Weekly (Thu–Wed)" },
+  { key: "7d", label: "Last 7 Days" },
+  { key: "14d", label: "Last 14 Days" },
+  { key: "week", label: "Weekly (Thu–Wed)" },
 ];
 const CHANNEL_ORDER = ["Email", "Chat", "Help Center", "SMS"];
 const CTYPE_ORDER = ["Lead", "New (1 Order)", "Recurring"];
@@ -73,26 +73,87 @@ const STATUS_STYLE: Record<string, string> = {
   leave: "bg-blue-100 text-blue-800",
   sick: "bg-purple-100 text-purple-800",
   absent: "bg-red-100 text-red-800",
-  off: "bg-slate-100 text-slate-500",
+  off: "bg-slate-100 text-slate-400",
 };
 const STATUS_SHORT: Record<string, string> = {
   present: "P", half_day: "½", leave: "L", sick: "S", absent: "A", off: "—",
 };
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// ── shared UI primitives (mirrors app/cost/page.tsx & app/food-safety) ───────
+const ACCENT_STYLES = {
+  blue: "border-t-blue-500 bg-blue-50/40",
+  green: "border-t-emerald-500 bg-emerald-50/40",
+  amber: "border-t-amber-500 bg-amber-50/40",
+  red: "border-t-red-500 bg-red-50/40",
+  neutral: "border-t-slate-300 bg-white",
+} as const;
+const VALUE_STYLES = {
+  blue: "text-blue-700",
+  green: "text-emerald-700",
+  amber: "text-amber-700",
+  red: "text-red-700",
+  neutral: "text-slate-900",
+} as const;
+type Accent = keyof typeof ACCENT_STYLES;
+
+function StatCard({ label, value, sub, accent = "neutral" }: {
+  label: string; value: string; sub?: string; accent?: Accent;
+}) {
   return (
-    <div className="rounded-lg border border-slate-200 border-t-2 border-t-blue-500 bg-white p-4">
+    <div className={`rounded-lg border border-slate-200 border-t-2 p-4 ${ACCENT_STYLES[accent]}`}>
       <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">{label}</p>
-      <p className="text-2xl font-semibold text-slate-900">{value}</p>
-      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
+      <p className={`text-2xl font-bold leading-none ${VALUE_STYLES[accent]}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-1.5">{sub}</p>}
     </div>
   );
 }
 
+function Card({ title, sub, children, headerRight, className = "" }: {
+  title?: string; sub?: string; children: React.ReactNode;
+  headerRight?: React.ReactNode; className?: string;
+}) {
+  return (
+    <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
+      {(title || headerRight) && (
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            {title && <h3 className="text-sm font-semibold text-slate-800">{title}</h3>}
+            {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+          </div>
+          {headerRight && <div className="flex-shrink-0">{headerRight}</div>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function Segmented<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: { key: T; label: string }[];
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+            value === o.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const TH = "px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider";
+const TD = "px-3 py-2 text-xs text-slate-800";
+
 function fmtDate(d: string) {
   return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -143,14 +204,14 @@ export default function CsMetricsPage() {
       ...CHANNEL_ORDER.filter((c) => table[c]),
       ...Object.keys(table).filter((c) => !CHANNEL_ORDER.includes(c)),
     ];
-    const rows: { channel: string; ctype: string; cell: Cell }[] = [];
+    const rows: { channel: string; ctype: string; cell: Cell; first: boolean }[] = [];
     for (const chan of channels) {
       const ctypes = [
         ...CTYPE_ORDER.filter((t) => table[chan][t]),
         ...Object.keys(table[chan]).filter((t) => !CTYPE_ORDER.includes(t)),
       ];
       ctypes.forEach((ctype, i) =>
-        rows.push({ channel: i === 0 ? chan : "", ctype, cell: table[chan][ctype] }),
+        rows.push({ channel: i === 0 ? chan : "", ctype, cell: table[chan][ctype], first: i === 0 }),
       );
     }
     return rows;
@@ -162,226 +223,201 @@ export default function CsMetricsPage() {
     ? Array.from(new Set(Object.keys(heat).map((k) => Number(k.split("-")[1])))).sort((a, b) => a - b)
     : [];
 
+  const win = metrics
+    ? `${fmtDate(metrics.window_start.slice(0, 10))} → ${fmtDate(metrics.window_end.slice(0, 10))} (${metrics.timezone})`
+    : "";
+
   return (
-    <div className="px-6 py-6 max-w-7xl mx-auto space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">CS Metrics</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Pulled directly from the Gorgias API by the droplet collector
-            {metrics && <> — window {fmtDate(metrics.window_start.slice(0, 10))} → {fmtDate(metrics.window_end.slice(0, 10))} ({metrics.timezone}), generated {new Date(metrics.generated_at).toLocaleString()}</>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {KINDS.map((k) => (
-            <button
-              key={k.id}
-              onClick={() => { setKind(k.id); setWeekStart(null); }}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium border ${
-                kind === k.id
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-              }`}
-            >
-              {k.label}
-            </button>
-          ))}
-          {kind === "week" && weekOptions.length > 0 && (
-            <select
-              className="border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-700"
-              value={weekStart ?? weekOptions[0].window_start}
-              onChange={(e) => setWeekStart(e.target.value)}
-            >
-              {weekOptions.map((w) => (
-                <option key={w.window_start} value={w.window_start}>
-                  {fmtDate(w.window_start)} – {fmtDate(w.window_end)}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {!loading && !metrics && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          No snapshot for this window yet. The collector cron writes 7/14-day snapshots daily and
-          weekly snapshots every Thursday; run <code>run_report.py</code> on the droplet to backfill.
-        </div>
-      )}
-
-      {metrics && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <StatCard label="Tickets Created" value={metrics.summary.tickets_created.toLocaleString()} />
-            <StatCard label="Tickets Closed" value={metrics.summary.tickets_closed.toLocaleString()} />
-            <StatCard label="Messages Sent" value={metrics.summary.messages_sent.toLocaleString()} />
-            <StatCard label="First Response" value={metrics.summary.frt_display || "n/a"} sub="avg, created in window" />
-            <StatCard label="Resolution Time" value={metrics.summary.resolution_display || "n/a"} sub="avg, closed in window" />
-            <StatCard
-              label="Average CSAT"
-              value={metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a"}
-              sub={`${metrics.summary.csat_count} responses`}
-            />
-          </div>
-
-          <section>
-            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
-              Channel × Customer Type
-            </h2>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Channel</th>
-                    <th className="px-4 py-2 text-left">Customer Type</th>
-                    <th className="px-4 py-2 text-right">Tickets Created</th>
-                    <th className="px-4 py-2 text-right">Messages Sent</th>
-                    <th className="px-4 py-2 text-right">First Response Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {channelRows.map((row, i) => (
-                    <tr key={i} className={row.channel ? "border-t border-slate-200" : ""}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{row.channel}</td>
-                      <td className="px-4 py-2 text-slate-600">{row.ctype}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{row.cell.tickets_created.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{row.cell.messages_sent.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{row.cell.frt_display || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section>
-            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Team</h2>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-2 text-left">TM Name</th>
-                    <th className="px-4 py-2 text-right">TPH</th>
-                    <th className="px-4 py-2 text-right">Total Tickets</th>
-                    <th className="px-4 py-2 text-right">Tickets Touched</th>
-                    <th className="px-4 py-2 text-right">CSAT</th>
-                    <th className="px-4 py-2 text-right">Days Worked</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {Object.entries(metrics.agents).map(([email, a]) => (
-                    <tr key={email}>
-                      <td className="px-4 py-2 font-medium text-slate-900" title={email}>{a.name}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{a.tph ?? "—"}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{a.messages_sent.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{a.tickets_touched.toLocaleString()}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {a.csat != null ? `${a.csat.toFixed(2)} (${a.csat_count})` : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {a.days_worked}
-                        {a.schedule_source === "default" && (
-                          <span className="text-slate-400" title="No schedule entries — assumed Mon–Fri. Set the roster below.">*</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-slate-400 mt-2">
-              Total Tickets = messages sent by the agent in the window. TPH = Total Tickets ÷ (days worked × 7.5h).
-              * = default Mon–Fri schedule; edit the roster below for accuracy.
+    <div className="min-h-screen bg-slate-50">
+      <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
+        {/* header */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">CS Metrics</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Pulled directly from the Gorgias API by the droplet collector
+              {metrics && <> — window {win}, generated {new Date(metrics.generated_at).toLocaleString()}</>}
             </p>
-          </section>
+          </div>
+          <div className="flex items-center gap-2">
+            <Segmented value={kind} onChange={(k) => { setKind(k); setWeekStart(null); }} options={KINDS} />
+            {kind === "week" && weekOptions.length > 0 && (
+              <select
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-slate-700 bg-white"
+                value={weekStart ?? weekOptions[0].window_start}
+                onChange={(e) => setWeekStart(e.target.value)}
+              >
+                {weekOptions.map((w) => (
+                  <option key={w.window_start} value={w.window_start}>
+                    {fmtDate(w.window_start)} – {fmtDate(w.window_end)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
 
-          <section className="grid md:grid-cols-3 gap-6">
-            {CTYPE_ORDER.filter((t) => metrics.top_drivers[t]?.length).map((section) => (
-              <div key={section}>
-                <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
-                  {section} Top Drivers
-                </h2>
-                <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-                  {metrics.top_drivers[section].slice(0, 6).map(([driver, count]) => (
-                    <div key={driver} className="flex items-center justify-between px-4 py-2 text-sm">
-                      <span className="text-slate-600 truncate pr-3" title={driver}>
-                        {driver.split("::").slice(-1)[0]}
-                      </span>
-                      <span className="tabular-nums font-medium text-slate-900">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </section>
+        {loading && <p className="text-sm text-slate-400">Loading…</p>}
+        {!loading && !metrics && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            No snapshot for this window yet. The collector cron writes 7/14-day snapshots daily and
+            weekly snapshots every Thursday; run <code>run_report.py</code> on the droplet to backfill.
+          </div>
+        )}
 
-          {heatHours.length > 0 && (
-            <section>
-              <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
-                Busiest Times (tickets created)
-              </h2>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4">
-                <table className="text-xs">
-                  <thead>
+        {metrics && (
+          <>
+            {/* KPI row */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <StatCard accent="blue" label="Tickets Created" value={metrics.summary.tickets_created.toLocaleString()} />
+              <StatCard label="Tickets Closed" value={metrics.summary.tickets_closed.toLocaleString()} />
+              <StatCard label="Messages Sent" value={metrics.summary.messages_sent.toLocaleString()} />
+              <StatCard accent="amber" label="First Response" value={metrics.summary.frt_display || "n/a"} sub="avg, created in window" />
+              <StatCard label="Resolution Time" value={metrics.summary.resolution_display || "n/a"} sub="avg, closed in window" />
+              <StatCard accent="green" label="Average CSAT"
+                value={metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a"}
+                sub={`${metrics.summary.csat_count} responses`} />
+            </div>
+
+            {/* channel × customer type */}
+            <Card title="Channel × Customer Type">
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      <th className="pr-3 py-1 text-left text-slate-500 font-medium">Hour</th>
-                      {WEEKDAYS.map((d) => (
-                        <th key={d} className="px-1 py-1 text-slate-500 font-medium w-16">{d}</th>
-                      ))}
+                      <th className={`${TH} text-left`}>Channel</th>
+                      <th className={`${TH} text-left`}>Customer Type</th>
+                      <th className={`${TH} text-right`}>Tickets Created</th>
+                      <th className={`${TH} text-right`}>Messages Sent</th>
+                      <th className={`${TH} text-right`}>First Response Time</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {heatHours.map((h) => (
-                      <tr key={h}>
-                        <td className="pr-3 py-0.5 text-slate-500 tabular-nums">{String(h).padStart(2, "0")}:00</td>
-                        {WEEKDAYS.map((_, d) => {
-                          const v = heat[`${d}-${h}`] ?? 0;
-                          const depth = v / heatMax;
-                          const bg = depth === 0 ? "transparent" : `rgba(37, 99, 235, ${0.08 + depth * 0.72})`;
-                          return (
-                            <td key={d} className="px-0.5 py-0.5">
-                              <div
-                                className="h-6 w-16 rounded flex items-center justify-center tabular-nums"
-                                style={{ backgroundColor: bg, color: depth > 0.55 ? "white" : "#334155" }}
-                                title={`${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 — ${v} tickets`}
-                              >
-                                {v || ""}
-                              </div>
-                            </td>
-                          );
-                        })}
+                  <tbody className="divide-y divide-slate-100">
+                    {channelRows.map((row, i) => (
+                      <tr key={i} className={`hover:bg-slate-50/60 ${row.first && i > 0 ? "border-t-2 border-slate-200" : ""}`}>
+                        <td className={`${TD} font-semibold text-slate-900`}>{row.channel}</td>
+                        <td className={`${TD} text-slate-600`}>{row.ctype}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{row.cell.tickets_created.toLocaleString()}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{row.cell.messages_sent.toLocaleString()}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{row.cell.frt_display || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </section>
-          )}
-        </>
-      )}
+            </Card>
 
-      <ScheduleEditor seedAgents={metrics ? Object.entries(metrics.agents).map(([email, a]) => ({ email, name: a.name })) : []} />
-
-      <section>
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Generated Reports</h2>
-        {reports.length === 0 ? (
-          <p className="text-sm text-slate-400">No generated files yet.</p>
-        ) : (
-          <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-            {reports.map((f) => (
-              <div key={f.name} className="flex items-center justify-between px-4 py-2 text-sm">
-                <a href={`/api/cs-reports?file=${encodeURIComponent(f.name)}`} className="text-blue-700 hover:underline">
-                  {f.name}
-                </a>
-                <span className="text-xs text-slate-400">
-                  {(f.size / 1024).toFixed(0)} KB — {new Date(f.modified).toLocaleDateString()}
-                </span>
+            {/* team */}
+            <Card title="Team" sub="Total Tickets = messages sent · TPH = Total Tickets ÷ (days worked × 7.5h) · * = default Mon–Fri (set the roster below)">
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className={`${TH} text-left`}>TM Name</th>
+                      <th className={`${TH} text-right`}>TPH</th>
+                      <th className={`${TH} text-right`}>Total Tickets</th>
+                      <th className={`${TH} text-right`}>Tickets Touched</th>
+                      <th className={`${TH} text-right`}>CSAT</th>
+                      <th className={`${TH} text-right`}>Days Worked</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {Object.entries(metrics.agents).map(([email, a]) => (
+                      <tr key={email} className="hover:bg-slate-50/60">
+                        <td className={`${TD} font-semibold text-slate-900`} title={email}>{a.name}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{a.tph ?? "—"}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{a.messages_sent.toLocaleString()}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{a.tickets_touched.toLocaleString()}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{a.csat != null ? `${a.csat.toFixed(2)} (${a.csat_count})` : "—"}</td>
+                        <td className={`${TD} text-right tabular-nums`}>
+                          {a.days_worked}
+                          {a.schedule_source === "default" && (
+                            <span className="text-slate-400" title="No schedule entries — assumed Mon–Fri.">*</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
+            </Card>
+
+            {/* top drivers */}
+            <div className="grid md:grid-cols-3 gap-4">
+              {CTYPE_ORDER.filter((t) => metrics.top_drivers[t]?.length).map((section) => (
+                <Card key={section} title={`${section} — Top Drivers`}>
+                  <div className="divide-y divide-slate-100">
+                    {metrics.top_drivers[section].slice(0, 6).map(([driver, count]) => (
+                      <div key={driver} className="flex items-center justify-between py-1.5 text-xs">
+                        <span className="text-slate-600 truncate pr-3" title={driver}>{driver.split("::").slice(-1)[0]}</span>
+                        <span className="tabular-nums font-semibold text-slate-900">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            {/* heatmap */}
+            {heatHours.length > 0 && (
+              <Card title="Busiest Times" sub="tickets created per weekday × hour">
+                <div className="overflow-x-auto">
+                  <table className="text-[11px]">
+                    <thead>
+                      <tr>
+                        <th className="pr-3 py-1 text-left text-slate-500 font-medium">Hour</th>
+                        {WEEKDAYS.map((d) => (
+                          <th key={d} className="px-1 py-1 text-slate-500 font-medium w-14">{d}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {heatHours.map((h) => (
+                        <tr key={h}>
+                          <td className="pr-3 py-0.5 text-slate-500 tabular-nums">{String(h).padStart(2, "0")}:00</td>
+                          {WEEKDAYS.map((_, d) => {
+                            const v = heat[`${d}-${h}`] ?? 0;
+                            const depth = v / heatMax;
+                            const bg = depth === 0 ? "transparent" : `rgba(37, 99, 235, ${0.08 + depth * 0.72})`;
+                            return (
+                              <td key={d} className="px-0.5 py-0.5">
+                                <div
+                                  className="h-6 w-14 rounded flex items-center justify-center tabular-nums"
+                                  style={{ backgroundColor: bg, color: depth > 0.55 ? "white" : "#334155" }}
+                                  title={`${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 — ${v} tickets`}
+                                >
+                                  {v || ""}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </>
         )}
-      </section>
+
+        <ScheduleEditor seedAgents={metrics ? Object.entries(metrics.agents).map(([email, a]) => ({ email, name: a.name })) : []} />
+
+        <Card title="Generated Reports" sub="weekly Excel + PDF from the droplet cron">
+          {reports.length === 0 ? (
+            <p className="text-xs text-slate-400">No generated files yet.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {reports.map((f) => (
+                <div key={f.name} className="flex items-center justify-between py-1.5 text-xs">
+                  <a href={`/api/cs-reports?file=${encodeURIComponent(f.name)}`} className="text-blue-700 hover:underline">{f.name}</a>
+                  <span className="text-slate-400">{(f.size / 1024).toFixed(0)} KB — {new Date(f.modified).toLocaleDateString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -401,7 +437,6 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   const [newAgent, setNewAgent] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  // agents = snapshot agents + anyone already in the saved schedule + manually added
   const agents = useMemo(() => {
     const seen = new Set<string>();
     const merged: { email: string; name: string }[] = [];
@@ -474,49 +509,48 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
     setNewAgent("");
   };
 
+  const headerRight = (
+    <div className="flex items-center gap-2 text-xs">
+      <button onClick={() => setWeekOffset(weekOffset - 1)} className="px-2 py-1 border border-slate-300 rounded hover:border-slate-400">←</button>
+      <span className="text-slate-600 tabular-nums">{fmtDate(weekDates[0])} – {fmtDate(weekDates[6])}</span>
+      <button onClick={() => setWeekOffset(weekOffset + 1)} className="px-2 py-1 border border-slate-300 rounded hover:border-slate-400">→</button>
+      <button onClick={save} disabled={saving === "saving"}
+        className="ml-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50">
+        {saving === "saving" ? "Saving…" : saving === "saved" ? "Saved ✓" : "Save"}
+      </button>
+      {saving === "error" && <span className="text-red-600">save failed</span>}
+    </div>
+  );
+
   return (
-    <section>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
-          Team Schedule <span className="normal-case font-normal text-slate-400">(feeds TPH — click a day to cycle)</span>
-        </h2>
-        <div className="flex items-center gap-2 text-sm">
-          <button onClick={() => setWeekOffset(weekOffset - 1)} className="px-2 py-1 border border-slate-200 rounded hover:border-slate-400">←</button>
-          <span className="text-slate-600 tabular-nums">{fmtDate(weekDates[0])} – {fmtDate(weekDates[6])}</span>
-          <button onClick={() => setWeekOffset(weekOffset + 1)} className="px-2 py-1 border border-slate-200 rounded hover:border-slate-400">→</button>
-          <button
-            onClick={save}
-            disabled={saving === "saving"}
-            className="ml-2 px-3 py-1.5 rounded-md bg-slate-900 text-white font-medium disabled:opacity-50"
-          >
-            {saving === "saving" ? "Saving…" : saving === "saved" ? "Saved ✓" : "Save"}
-          </button>
-          {saving === "error" && <span className="text-red-600 text-xs">save failed</span>}
-        </div>
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+    <Card
+      title="Team Schedule"
+      sub="Feeds TPH — click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off"
+      headerRight={headerRight}
+    >
+      <div className="overflow-x-auto">
+        <table className="min-w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-2 text-left">Agent</th>
+              <th className={`${TH} text-left`}>Agent</th>
               {weekDates.map((d, i) => (
-                <th key={d} className="px-2 py-2 text-center font-medium">
-                  {WEEKDAYS[i]}<br /><span className="text-slate-400 normal-case">{fmtDate(d)}</span>
+                <th key={d} className={`${TH} text-center`}>
+                  {WEEKDAYS[i]}<br /><span className="text-slate-400 normal-case font-normal">{fmtDate(d)}</span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {agents.map((agent) => (
-              <tr key={agent.email}>
-                <td className="px-4 py-2 font-medium text-slate-900" title={agent.email}>{agent.name}</td>
+              <tr key={agent.email} className="hover:bg-slate-50/60">
+                <td className={`${TD} font-semibold text-slate-900`} title={agent.email}>{agent.name}</td>
                 {weekDates.map((date) => {
                   const status = rows[`${agent.email}|${date}`]?.status ?? defaultStatus(date);
                   return (
                     <td key={date} className="px-2 py-1.5 text-center">
                       <button
                         onClick={() => cycle(agent.email, agent.name, date)}
-                        className={`w-10 h-7 rounded text-xs font-semibold ${STATUS_STYLE[status]}`}
+                        className={`w-9 h-7 rounded text-xs font-semibold ${STATUS_STYLE[status]}`}
                         title={`${status} — click to change`}
                       >
                         {STATUS_SHORT[status]}
@@ -535,16 +569,11 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
           onChange={(e) => setNewAgent(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addAgent()}
           placeholder="add agent email…"
-          className="border border-slate-200 rounded-md px-3 py-1.5 text-sm w-64"
+          className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs w-64"
         />
-        <button onClick={addAgent} className="px-3 py-1.5 border border-slate-200 rounded-md text-sm hover:border-slate-400">
-          Add
-        </button>
-        <span className="text-xs text-slate-400">
-          P present · ½ half day · L leave · S sick · A absent · — off. Unsaved cells use Mon–Fri defaults.
-        </span>
+        <button onClick={addAgent} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs hover:border-slate-400">Add</button>
       </div>
-    </section>
+    </Card>
   );
 }
 
