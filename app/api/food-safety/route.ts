@@ -27,6 +27,9 @@ type Row = {
   sku_categories: unknown;
   sku_in_question: string | null;
   message_excerpt: string | null;
+  first_agent_response?: string | null;
+  first_agent_name?: string | null;
+  first_agent_response_at?: Date | string | null;
   classified_by: string | null;
   tag_audit: string | null;
   resolution_applied: string | null;
@@ -157,6 +160,9 @@ export async function GET(request: NextRequest) {
       has("concerns") ? "t.concerns" : "NULL AS concerns",
       has("sku_categories") ? "t.sku_categories" : "NULL AS sku_categories",
       has("message_excerpt") ? "t.message_excerpt" : "NULL AS message_excerpt",
+      has("first_agent_response") ? "t.first_agent_response" : "NULL AS first_agent_response",
+      has("first_agent_name") ? "t.first_agent_name" : "NULL AS first_agent_name",
+      has("first_agent_response_at") ? "t.first_agent_response_at" : "NULL AS first_agent_response_at",
       has("classified_by") ? "t.classified_by" : "NULL AS classified_by",
       has("tag_audit") ? "t.tag_audit" : "NULL AS tag_audit",
       has("resolution_applied") ? "t.resolution_applied" : "NULL AS resolution_applied",
@@ -303,6 +309,9 @@ export async function GET(request: NextRequest) {
         isResolved: r.status === "closed",
         rootCause,
         messageExcerpt: r.message_excerpt,
+        firstAgentResponse: r.first_agent_response ?? null,
+        firstAgentName: r.first_agent_name ?? null,
+        firstAgentResponseAt: r.first_agent_response_at ?? null,
         photoUrls,
         resolutionReference: r.gorgias_resolution_reference ?? null,
       };

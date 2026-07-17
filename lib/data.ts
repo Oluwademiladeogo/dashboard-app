@@ -42,6 +42,9 @@ type FoodSafetyApiRow = {
   isResolved?: boolean;
   rootCause?: string | null;
   messageExcerpt?: string | null;
+  firstAgentResponse?: string | null;
+  firstAgentName?: string | null;
+  firstAgentResponseAt?: string | null;
   photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
   resolutionReference?: string | null;
 };
@@ -109,6 +112,9 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     isResolved: Boolean(r.isResolved),
     rootCause: str(r.rootCause),
     messageExcerpt: str(r.messageExcerpt),
+    firstAgentResponse: str(r.firstAgentResponse),
+    firstAgentName: str(r.firstAgentName),
+    firstAgentResponseAt: parseDate(r.firstAgentResponseAt),
     photoUrls: Array.isArray(r.photoUrls)
       ? r.photoUrls
           .map((photo) => ({

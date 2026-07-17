@@ -26,6 +26,9 @@ export interface FoodSafetyTicket {
   isResolved: boolean;
   rootCause: string | null;
   messageExcerpt: string | null;
+  firstAgentResponse: string | null;
+  firstAgentName: string | null;
+  firstAgentResponseAt: Date | null;
   photoUrls: {
     url: string;
     name: string | null;

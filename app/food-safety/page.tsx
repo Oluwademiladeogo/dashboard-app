@@ -362,11 +362,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     });
   }
 
-  function shortText(v: string | null, max = 700) {
-    if (!v) return "—";
-    return v.length > max ? `${v.slice(0, max)}...` : v;
-  }
-
   function reportedSku(t: FoodSafetyTicket) {
     if (!t.reportedItemName || !t.skuCodes.length) return t.skuInQuestion;
     const needle = t.reportedItemName.toLowerCase();
@@ -378,6 +373,10 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     });
     if (containsIdx >= 0 && t.skuCodes[containsIdx]) return t.skuCodes[containsIdx];
     return t.skuInQuestion;
+  }
+
+  function displayResolutionReference(value: string | null) {
+    return value?.replace(/^Mold Sheet:\s*/i, "") || "—";
   }
 
   function downloadCsv() {
@@ -635,7 +634,20 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Customer Message</p>
                               <p className="mt-1 text-xs leading-5 text-slate-700 whitespace-pre-wrap">
-                                {shortText(t.messageExcerpt)}
+                                {t.messageExcerpt ?? "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">First Agent Response</p>
+                                {t.firstAgentResponseAt && (
+                                  <p className="text-[10px] text-slate-400">
+                                    {[t.firstAgentName, fullDate(t.firstAgentResponseAt)].filter(Boolean).join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                              <p className="mt-1 text-xs leading-5 text-slate-700 whitespace-pre-wrap">
+                                {t.firstAgentResponse ?? "Awaiting agent response"}
                               </p>
                             </div>
                             <div>
@@ -730,7 +742,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                             </div>
                             <div className="col-span-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mold Sheet Reference</p>
-                              <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.resolutionReference ?? "—"}</p>
+                              <p className="mt-1 text-slate-700 whitespace-pre-wrap">{displayResolutionReference(t.resolutionReference)}</p>
                             </div>
                           </div>
                         </div>
