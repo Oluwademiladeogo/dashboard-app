@@ -57,6 +57,18 @@ interface ReportFile {
   size: number;
   modified: string;
 }
+interface ExplorerResult {
+  metrics: {
+    ticketsCreated: number;
+    messagesSent: number;
+    frtSeconds: number | null;
+    frtDisplay: string;
+    frtCount: number;
+  };
+  options: { channels: string[]; customerTypes: string[]; tags: string[] };
+  coverage: { messageRows: number; from: string | null; to: string | null };
+  definitions: { sms: string; frt: string };
+}
 
 const KINDS = [
   { key: "7d", label: "Last 7 Days" },
@@ -231,10 +243,6 @@ export default function CsMetricsPage() {
     ? Array.from(new Set(Object.keys(heat).map((k) => Number(k.split("-")[1])))).sort((a, b) => a - b)
     : [];
 
-  const win = metrics
-    ? `${fmtDate(metrics.window_start.slice(0, 10))} → ${fmtDateEndIncl(metrics.window_end.slice(0, 10))} (${metrics.timezone})`
-    : "";
-
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
@@ -242,10 +250,6 @@ export default function CsMetricsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-slate-900">CS Metrics</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Pulled directly from the Gorgias API by the droplet collector
-              {metrics && <> — window {win}, generated {new Date(metrics.generated_at).toLocaleString()}</>}
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <Segmented value={kind} onChange={(k) => { setKind(k); setWeekStart(null); }} options={KINDS} />
@@ -272,6 +276,8 @@ export default function CsMetricsPage() {
             weekly snapshots every Thursday; run <code>run_report.py</code> on the droplet to backfill.
           </div>
         )}
+
+        <FilterExplorer />
 
         {metrics && (
           <>
@@ -316,7 +322,19 @@ export default function CsMetricsPage() {
             </Card>
 
             {/* team */}
-            <Card title="Team" sub="Total Tickets = messages sent · TPH = Total Tickets ÷ (days worked × 7.5h) · * = default Mon–Fri (set the roster below)">
+            <Card
+              title="Team"
+              sub="Total Tickets = messages sent · TPH = tickets ÷ (days × 7.5h)"
+              headerRight={(
+                <span
+                  className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
+                  title="* = default Mon–Fri because no saved schedule entries exist for that agent in this window."
+                  aria-label="Default schedule note"
+                >
+                  ?
+                </span>
+              )}
+            >
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
@@ -432,6 +450,146 @@ export default function CsMetricsPage() {
   );
 }
 
+// ── Gorgias-style filter explorer ────────────────────────────────────────────
+function FilterExplorer() {
+  const [today] = useState(() => new Date());
+  const [start, setStart] = useState(() => isoDate(new Date(today.getTime() - 6 * 86400000)));
+  const [end, setEnd] = useState(() => isoDate(today));
+  const [channels, setChannels] = useState<string[]>([]);
+  const [customerTypes, setCustomerTypes] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagSearch, setTagSearch] = useState("");
+  const [result, setResult] = useState<ExplorerResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ start, end });
+    channels.forEach((value) => params.append("channel", value));
+    customerTypes.forEach((value) => params.append("customerType", value));
+    tags.forEach((value) => params.append("tag", value));
+    fetch(`/api/cs-explorer?${params}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Filter request failed");
+        return data as ExplorerResult;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setResult(data);
+        setError("");
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Filter request failed");
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [start, end, channels, customerTypes, tags]);
+
+  const toggle = (value: string, values: string[], setter: (next: string[]) => void) => {
+    setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  };
+  const presets = (days: number) => {
+    setEnd(isoDate(today));
+    setStart(isoDate(new Date(today.getTime() - (days - 1) * 86400000)));
+  };
+  const visibleTags = (result?.options.tags ?? [])
+    .filter((tag) => tag.toLowerCase().includes(tagSearch.toLowerCase()))
+    .slice(0, 40);
+  const filterChip = (value: string, values: string[], setter: (next: string[]) => void) => (
+    <button
+      key={value}
+      onClick={() => toggle(value, values, setter)}
+      className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        values.includes(value)
+          ? "border-blue-600 bg-blue-600 text-white"
+          : "border-slate-300 bg-white text-slate-600 hover:border-slate-400"
+      }`}
+    >
+      {value}
+    </button>
+  );
+
+  return (
+    <Card
+      title="Filter Explorer"
+      sub="Live metrics from the reporting database · SMS mirrors Gorgias Tag > klaviyo-sms"
+      headerRight={(channels.length + customerTypes.length + tags.length > 0) && (
+        <button
+          onClick={() => { setChannels([]); setCustomerTypes([]); setTags([]); }}
+          className="text-[11px] font-medium text-blue-700 hover:underline"
+        >
+          Clear filters
+        </button>
+      )}
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="mr-2 flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+            {[7, 14, 30, 90].map((days) => (
+              <button key={days} onClick={() => presets(days)}
+                className="rounded-md px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-white hover:shadow-sm">
+                {days}d
+              </button>
+            ))}
+          </div>
+          <label className="text-[11px] font-medium text-slate-500">
+            From
+            <input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)}
+              className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700" />
+          </label>
+          <label className="text-[11px] font-medium text-slate-500">
+            To
+            <input type="date" value={end} min={start} max={isoDate(today)}
+              onChange={(e) => setEnd(e.target.value)}
+              className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700" />
+          </label>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Channel</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(result?.options.channels ?? ["Email", "Chat", "Help Center", "SMS"]).map((value) =>
+                filterChip(value, channels, setChannels))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Customer Type</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(result?.options.customerTypes ?? ["Lead", "New (1 Order)", "Recurring"]).map((value) =>
+                filterChip(value, customerTypes, setCustomerTypes))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Tag</p>
+            <input value={tagSearch} onChange={(e) => setTagSearch(e.target.value)}
+              placeholder="Find a tag…"
+              className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs" />
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
+              {visibleTags.map((value) => filterChip(value, tags, setTags))}
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard accent="blue" label="Tickets Created"
+            value={loading ? "…" : (result?.metrics.ticketsCreated ?? 0).toLocaleString()} />
+          <StatCard label="Messages Sent"
+            value={loading ? "…" : (result?.metrics.messagesSent ?? 0).toLocaleString()} />
+          <StatCard accent="amber" label="First Response"
+            value={loading ? "…" : result?.metrics.frtDisplay || "n/a"}
+            sub={result ? `${result.metrics.frtCount} replied tickets` : undefined} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 // ── schedule editor ───────────────────────────────────────────────────────────
 function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: string }[] }) {
   const monday = useMemo(() => {
@@ -446,6 +604,7 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   const [manualAgents, setManualAgents] = useState<{ email: string; name: string }[]>([]);
   const [newAgent, setNewAgent] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [expanded, setExpanded] = useState(false);
 
   const agents = useMemo(() => {
     const seen = new Set<string>();
@@ -521,9 +680,27 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
 
   const headerRight = (
     <div className="flex items-center gap-2 text-xs">
-      <button onClick={() => setWeekOffset(weekOffset - 1)} className="px-2 py-1 border border-slate-300 rounded hover:border-slate-400">←</button>
+      <button
+        onClick={() => setWeekOffset(weekOffset - 1)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
+        aria-label="Previous week"
+        title="Previous week"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m15 18-6-6 6-6" />
+        </svg>
+      </button>
       <span className="text-slate-600 tabular-nums">{fmtDate(weekDates[0])} – {fmtDate(weekDates[6])}</span>
-      <button onClick={() => setWeekOffset(weekOffset + 1)} className="px-2 py-1 border border-slate-300 rounded hover:border-slate-400">→</button>
+      <button
+        onClick={() => setWeekOffset(weekOffset + 1)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
+        aria-label="Next week"
+        title="Next week"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
       <button onClick={save} disabled={saving === "saving"}
         className="ml-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50">
         {saving === "saving" ? "Saving…" : saving === "saved" ? "Saved ✓" : "Save"}
@@ -533,12 +710,31 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   );
 
   return (
-    <Card
-      title="Team Schedule"
-      sub="Feeds TPH — click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off"
-      headerRight={headerRight}
-    >
-      <div className="overflow-x-auto">
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 p-5 text-left"
+        aria-expanded={expanded}
+      >
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Team Schedule</h3>
+          <p className="mt-0.5 text-xs text-slate-400">Feeds TPH — expand to review or edit attendance</p>
+        </div>
+        <svg className={`h-4 w-4 text-slate-500 transition-transform ${expanded ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="border-t border-slate-200 px-5 pb-5 pt-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">
+              Click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off
+            </p>
+            {headerRight}
+          </div>
+          <div className="overflow-x-auto">
         <table className="min-w-full">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
@@ -572,18 +768,20 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
             ))}
           </tbody>
         </table>
-      </div>
-      <div className="flex items-center gap-2 mt-3">
-        <input
-          value={newAgent}
-          onChange={(e) => setNewAgent(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addAgent()}
-          placeholder="add agent email…"
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs w-64"
-        />
-        <button onClick={addAgent} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs hover:border-slate-400">Add</button>
-      </div>
-    </Card>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <input
+              value={newAgent}
+              onChange={(e) => setNewAgent(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAgent()}
+              placeholder="add agent email…"
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs w-64"
+            />
+            <button onClick={addAgent} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs hover:border-slate-400">Add</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

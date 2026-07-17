@@ -166,6 +166,7 @@ function DateRangeBar({
   includeArrivedWarm: boolean;
   onToggleArrivedWarm: () => void;
 }) {
+  const [customOpen, setCustomOpen] = useState(false);
   const today = new Date();
   const isAll = !dateFrom && !dateTo;
   const activeKey = isAll
@@ -215,31 +216,34 @@ function DateRangeBar({
       <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
         {RANGE_PRESETS.map((p) => chip(p.key, p.label, () => applyPreset(p.days)))}
         {chip("all", "All time", () => onChange(null, null))}
+        {chip("custom", "Custom", () => setCustomOpen((open) => !open))}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <input
-          type="date"
-          value={toInputValue(dateFrom)}
-          max={toInputValue(dateTo) || undefined}
-          onChange={(e) =>
-            onChange(e.target.value ? startOfDay(new Date(`${e.target.value}T00:00:00`)) : null, dateTo)
-          }
-          aria-label="Summary from date"
-          className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-        />
-        <span className="text-xs text-slate-400">to</span>
-        <input
-          type="date"
-          value={toInputValue(dateTo)}
-          min={toInputValue(dateFrom) || undefined}
-          onChange={(e) =>
-            onChange(dateFrom, e.target.value ? endOfDay(new Date(`${e.target.value}T00:00:00`)) : null)
-          }
-          aria-label="Summary to date"
-          className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-        />
-      </div>
+      {customOpen && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={toInputValue(dateFrom)}
+            max={toInputValue(dateTo) || undefined}
+            onChange={(e) =>
+              onChange(e.target.value ? startOfDay(new Date(`${e.target.value}T00:00:00`)) : null, dateTo)
+            }
+            aria-label="Custom reporting period from date"
+            className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+          />
+          <span className="text-xs text-slate-400">to</span>
+          <input
+            type="date"
+            value={toInputValue(dateTo)}
+            min={toInputValue(dateFrom) || undefined}
+            onChange={(e) =>
+              onChange(dateFrom, e.target.value ? endOfDay(new Date(`${e.target.value}T00:00:00`)) : null)
+            }
+            aria-label="Custom reporting period to date"
+            className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+          />
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-4">
         <div className="text-right">
@@ -253,7 +257,7 @@ function DateRangeBar({
         </div>
         <button
           onClick={onToggleArrivedWarm}
-          className={`cursor-pointer px-2.5 py-1 rounded-full text-xs font-medium border transition-all shrink-0 ${
+          className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium border transition-all shrink-0 ${
             includeArrivedWarm
               ? "bg-blue-600 text-white border-blue-600 shadow-sm"
               : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
@@ -300,8 +304,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string | null } | null>(null);
-  const [csvFrom, setCsvFrom] = useState("");
-  const [csvTo, setCsvTo] = useState("");
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -379,21 +381,9 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     return t.skuInQuestion;
   }
 
-  const csvRows = useMemo(() => {
-    const fromMs = csvFrom ? new Date(`${csvFrom}T00:00:00`).getTime() : null;
-    const toMs = csvTo ? new Date(`${csvTo}T23:59:59.999`).getTime() : null;
-    return sorted.filter((t) => {
-      const time = t.dateOfComplaint?.getTime();
-      if (time == null) return false;
-      if (fromMs != null && time < fromMs) return false;
-      if (toMs != null && time > toMs) return false;
-      return true;
-    });
-  }, [sorted, csvFrom, csvTo]);
-
   function downloadCsv() {
     const headers = ["Shopify #", "Complaint Date", "Fulfilled_Date", "Customer", "Reported Item", "Reported SKU", "All Product SKU IDs", "All Products", "Concern", "Action", "Status", "Cost", "Gorgias Link"];
-    const rows = csvRows.map((t) => [
+    const rows = sorted.map((t) => [
       t.shopifyOrderNumber ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}` : "",
       t.dateOfComplaint ? t.dateOfComplaint.toISOString().slice(0, 10) : "",
       t.orderFulfilledAt ? t.orderFulfilledAt.toISOString().slice(0, 10) : "",
@@ -415,8 +405,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const range = csvFrom || csvTo ? `-${csvFrom || "start"}-to-${csvTo || "end"}` : "";
-    a.download = `food-safety${range}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `food-safety-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -446,23 +435,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
             className="w-full border border-slate-300 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <input
-            type="date"
-            value={csvFrom}
-            onChange={(e) => setCsvFrom(e.target.value)}
-            aria-label="CSV from complaint date"
-            className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-          />
-          <input
-            type="date"
-            value={csvTo}
-            onChange={(e) => setCsvTo(e.target.value)}
-            aria-label="CSV to complaint date"
-            className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-          />
-        </div>
-        <span className="text-xs text-slate-400 shrink-0">{sorted.length} records</span>
         <button
           onClick={downloadCsv}
           className="cursor-pointer shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-medium text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-all"
@@ -570,7 +542,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                          className="inline-flex rounded-md bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 hover:text-blue-900 hover:underline"
                         >
                           {t.shopifyOrderNumber
                             ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
