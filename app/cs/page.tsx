@@ -154,6 +154,13 @@ const TD = "px-3 py-2 text-xs text-slate-800";
 function fmtDate(d: string) {
   return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+// Collector windows store an exclusive end (Thu → next Thu); the team reads
+// ranges as inclusive Thu–Wed, so displayed ends are the day before.
+function fmtDateEndIncl(d: string) {
+  const dt = new Date(`${d}T00:00:00`);
+  dt.setDate(dt.getDate() - 1);
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -225,7 +232,7 @@ export default function CsMetricsPage() {
     : [];
 
   const win = metrics
-    ? `${fmtDate(metrics.window_start.slice(0, 10))} → ${fmtDate(metrics.window_end.slice(0, 10))} (${metrics.timezone})`
+    ? `${fmtDate(metrics.window_start.slice(0, 10))} → ${fmtDateEndIncl(metrics.window_end.slice(0, 10))} (${metrics.timezone})`
     : "";
 
   return (
@@ -250,7 +257,7 @@ export default function CsMetricsPage() {
               >
                 {weekOptions.map((w) => (
                   <option key={w.window_start} value={w.window_start}>
-                    {fmtDate(w.window_start)} – {fmtDate(w.window_end)}
+                    {fmtDate(w.window_start)} – {fmtDateEndIncl(w.window_end)}
                   </option>
                 ))}
               </select>

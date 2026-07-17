@@ -119,6 +119,140 @@ function PeriodSelector({
   );
 }
 
+// ── Reporting period selector ────────────────────────────────────────────────
+const RANGE_PRESETS = [
+  { key: "7d", label: "Last 7 days", days: 7 },
+  { key: "30d", label: "Last 30 days", days: 30 },
+  { key: "90d", label: "Last 90 days", days: 90 },
+] as const;
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+function toInputValue(d: Date | null) {
+  if (!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function sameDay(a: Date | null, b: Date | null) {
+  return !!a && !!b && toInputValue(a) === toInputValue(b);
+}
+function fmtRangeDate(d: Date | null) {
+  if (!d) return "—";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function DateRangeBar({
+  dateFrom,
+  dateTo,
+  onChange,
+  dataStart,
+  dataEnd,
+  count,
+}: {
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  onChange: (from: Date | null, to: Date | null) => void;
+  dataStart: Date | null;
+  dataEnd: Date | null;
+  count: number;
+}) {
+  const today = new Date();
+  const isAll = !dateFrom && !dateTo;
+  const activeKey = isAll
+    ? "all"
+    : RANGE_PRESETS.find((p) => {
+        const from = startOfDay(new Date(today.getTime() - (p.days - 1) * 86400000));
+        return sameDay(dateFrom, from) && sameDay(dateTo, today);
+      })?.key ?? "custom";
+
+  const applyPreset = (days: number) => {
+    onChange(startOfDay(new Date(today.getTime() - (days - 1) * 86400000)), endOfDay(today));
+  };
+
+  const chip = (key: string, label: string, onClick: () => void) => (
+    <button
+      key={key}
+      onClick={onClick}
+      className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+        activeKey === key
+          ? "bg-white text-slate-900 shadow-sm"
+          : "text-slate-500 hover:text-slate-700"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const shownFrom = dateFrom ?? dataStart;
+  const shownTo = dateTo ?? dataEnd;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="flex items-center gap-2 shrink-0">
+        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.8}
+            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+          />
+        </svg>
+        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+          Reporting period
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+        {RANGE_PRESETS.map((p) => chip(p.key, p.label, () => applyPreset(p.days)))}
+        {chip("all", "All time", () => onChange(null, null))}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <input
+          type="date"
+          value={toInputValue(dateFrom)}
+          max={toInputValue(dateTo) || undefined}
+          onChange={(e) =>
+            onChange(e.target.value ? startOfDay(new Date(`${e.target.value}T00:00:00`)) : null, dateTo)
+          }
+          aria-label="Summary from date"
+          className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+        />
+        <span className="text-xs text-slate-400">to</span>
+        <input
+          type="date"
+          value={toInputValue(dateTo)}
+          min={toInputValue(dateFrom) || undefined}
+          onChange={(e) =>
+            onChange(dateFrom, e.target.value ? endOfDay(new Date(`${e.target.value}T00:00:00`)) : null)
+          }
+          aria-label="Summary to date"
+          className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+        />
+      </div>
+
+      <div className="ml-auto flex items-center gap-2 text-right">
+        <div>
+          <p className="text-sm font-semibold text-slate-900 leading-tight">
+            {fmtRangeDate(shownFrom)} – {fmtRangeDate(shownTo)}
+          </p>
+          <p className="text-[11px] text-slate-400">
+            {isAll ? "all data · " : ""}
+            {count} complaint{count === 1 ? "" : "s"} summarized below
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Ticket table ──────────────────────────────────────────────────────────────
 function TicketTh({
   label,
@@ -151,6 +285,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
   const [sortField, setSortField] = useState<keyof FoodSafetyTicket>("dateOfComplaint");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string | null } | null>(null);
   const [csvFrom, setCsvFrom] = useState("");
   const [csvTo, setCsvTo] = useState("");
 
@@ -162,6 +297,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
       (t.shopifyOrderNumber ?? "").toLowerCase().includes(q) ||
       (t.customerName ?? "").toLowerCase().includes(q) ||
       (t.skuInQuestion ?? "").toLowerCase().includes(q) ||
+      (t.reportedItemName ?? "").toLowerCase().includes(q) ||
       (t.skuCodes ?? []).some((sku) => sku.toLowerCase().includes(q)) ||
       (t.skuItems ?? []).some((item) => item.toLowerCase().includes(q)) ||
       (t.perceivedConcern ?? "").toLowerCase().includes(q) ||
@@ -216,6 +352,19 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
     return v.length > max ? `${v.slice(0, max)}...` : v;
   }
 
+  function reportedSku(t: FoodSafetyTicket) {
+    if (!t.reportedItemName || !t.skuCodes.length) return t.skuInQuestion;
+    const needle = t.reportedItemName.toLowerCase();
+    const exactIdx = t.skuItems.findIndex((item) => item.toLowerCase() === needle);
+    if (exactIdx >= 0 && t.skuCodes[exactIdx]) return t.skuCodes[exactIdx];
+    const containsIdx = t.skuItems.findIndex((item) => {
+      const value = item.toLowerCase();
+      return value.includes(needle) || needle.includes(value);
+    });
+    if (containsIdx >= 0 && t.skuCodes[containsIdx]) return t.skuCodes[containsIdx];
+    return t.skuInQuestion;
+  }
+
   const csvRows = useMemo(() => {
     const fromMs = csvFrom ? new Date(`${csvFrom}T00:00:00`).getTime() : null;
     const toMs = csvTo ? new Date(`${csvTo}T23:59:59.999`).getTime() : null;
@@ -229,18 +378,20 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
   }, [sorted, csvFrom, csvTo]);
 
   function downloadCsv() {
-    const headers = ["Shopify #", "Complaint Date", "Fulfilled_Date", "Customer", "Product SKU ID", "Product/Item", "Concern", "Action", "Cost", "Status", "Gorgias Link"];
+    const headers = ["Shopify #", "Complaint Date", "Fulfilled_Date", "Customer", "Reported Item", "Reported SKU", "All Product SKU IDs", "All Products", "Concern", "Action", "Status", "Cost", "Gorgias Link"];
     const rows = csvRows.map((t) => [
       t.shopifyOrderNumber ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}` : "",
       t.dateOfComplaint ? t.dateOfComplaint.toISOString().slice(0, 10) : "",
       t.orderFulfilledAt ? t.orderFulfilledAt.toISOString().slice(0, 10) : "",
       t.customerName ?? "",
+      t.reportedItemName ?? (t.skuItems.length ? t.skuItems.join(" | ") : ""),
+      reportedSku(t) ?? "",
       t.skuCodes.length ? t.skuCodes.join(" | ") : (t.skuInQuestion ?? ""),
       t.skuItems.length ? t.skuItems.join(" | ") : "",
       t.perceivedConcern ?? "",
       t.correctiveAction ?? "",
-      t.resolutionCost > 0 ? t.resolutionCost.toFixed(0) : "",
       t.isResolved ? "Resolved" : "Open",
+      t.resolutionCost > 0 ? t.resolutionCost.toFixed(0) : "",
       t.gorgiasLink ?? "",
     ]);
     const csv = [headers, ...rows]
@@ -309,17 +460,14 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[600px] overflow-y-auto">
-        <table className="min-w-full text-sm">
+      <div className="rounded-lg border border-slate-200 max-h-[620px] overflow-y-auto">
+        <table className="w-full table-fixed text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              <th className="w-10 px-3 py-2.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                View
-              </th>
               <TicketTh
                 label="Shopify #"
                 field="shopifyOrderNumber"
-                w="w-24"
+                w="w-[7%]"
                 sortField={sortField}
                 sortAsc={sortAsc}
                 onSort={handleSort}
@@ -327,7 +475,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
               <TicketTh
                 label="Complaint"
                 field="dateOfComplaint"
-                w="w-24"
+                w="w-[7%]"
                 sortField={sortField}
                 sortAsc={sortAsc}
                 onSort={handleSort}
@@ -335,27 +483,28 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
               <TicketTh
                 label="Fulfilled_Date"
                 field="orderFulfilledAt"
-                w="w-28"
+                w="w-[8%]"
                 sortField={sortField}
                 sortAsc={sortAsc}
                 onSort={handleSort}
               />
-              <TicketTh label="Customer" field="customerName" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
-              <TicketTh label="Product SKU ID" field="skuInQuestion" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
-              <TicketTh label="Concern" field="perceivedConcern" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
-              <TicketTh label="Action" field="correctiveAction" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
-              <TicketTh
-                label="Cost"
-                field="resolutionCost"
-                w="w-16"
-                sortField={sortField}
-                sortAsc={sortAsc}
-                onSort={handleSort}
-              />
+              <TicketTh label="Customer" field="customerName" w="w-[11%]" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Item" field="reportedItemName" w="w-[14%]" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="SKU" field="skuInQuestion" w="w-[10%]" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Concern" field="perceivedConcern" w="w-[11%]" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <TicketTh label="Action" field="correctiveAction" w="w-[13%]" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
               <TicketTh
                 label="Status"
                 field="isResolved"
-                w="w-20"
+                w="w-[8%]"
+                sortField={sortField}
+                sortAsc={sortAsc}
+                onSort={handleSort}
+              />
+              <TicketTh
+                label="Cost"
+                field="resolutionCost"
+                w="w-[6%]"
                 sortField={sortField}
                 sortAsc={sortAsc}
                 onSort={handleSort}
@@ -373,25 +522,40 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
             {sorted.map((t, i) => {
               const id = t.idNumber ?? i;
               const expanded = expandedId === id;
+              const displaySku = reportedSku(t);
               return (
                 <Fragment key={id}>
-              <tr key={`${id}-row`} className="hover:bg-slate-50/60 transition-colors group">
-                <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expanded ? null : id)}
-                    className="cursor-pointer inline-flex h-6 items-center justify-center rounded border border-slate-200 px-2 text-[11px] font-medium text-slate-500 hover:border-slate-300 hover:text-slate-800"
-                    aria-label={expanded ? "Hide details" : "Show details"}
-                  >
-                    {expanded ? "Hide" : "Details"}
-                  </button>
-                </td>
+              <tr
+                key={`${id}-row`}
+                tabIndex={0}
+                onClick={() => setExpandedId(expanded ? null : id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedId(expanded ? null : id);
+                  }
+                }}
+                className="cursor-pointer hover:bg-slate-50/60 focus:bg-slate-50/80 focus:outline-none transition-colors group"
+                aria-expanded={expanded}
+              >
                     <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedId(expanded ? null : id);
+                        }}
+                        className="mr-1 cursor-pointer text-slate-400 hover:text-slate-700"
+                        aria-label={expanded ? "Hide details" : "Show details"}
+                      >
+                        {expanded ? "−" : "+"}
+                      </button>
                       {t.gorgiasLink ? (
                         <a
                           href={t.gorgiasLink}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           {t.shopifyOrderNumber
@@ -414,13 +578,19 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                       {t.customerName ?? "—"}
                     </td>
                     <td
+                      className="px-3 py-2 text-[11px] text-slate-600 max-w-[150px] truncate"
+                      title={t.reportedItemName ?? (t.skuItems.length ? t.skuItems.join(", ") : "")}
+                    >
+                      {t.reportedItemName ?? (t.skuItems.length ? t.skuItems.slice(0, 2).join(", ") : "—")}
+                    </td>
+                    <td
                       className="px-3 py-2 text-[11px] text-slate-600 max-w-[130px] truncate"
                       title={[
-                        t.skuCodes.length ? `SKU: ${t.skuCodes.join(", ")}` : null,
-                        t.skuItems.length ? `Item: ${t.skuItems.join(", ")}` : null,
+                        displaySku ? `Reported SKU: ${displaySku}` : null,
+                        t.skuCodes.length ? `All SKUs: ${t.skuCodes.join(", ")}` : null,
                       ].filter(Boolean).join(" | ")}
                     >
-                      {t.skuInQuestion ?? "—"}
+                      {displaySku ?? "—"}
                     </td>
                     <td
                       className="px-3 py-2 text-[11px] text-slate-600 max-w-[200px] truncate"
@@ -433,13 +603,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                       title={t.correctiveAction ?? ""}
                     >
                       {t.correctiveAction ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap">
-                      {t.resolutionCost > 0 ? (
-                        `$${t.resolutionCost.toFixed(0)}`
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -455,23 +618,32 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                         {t.isResolved ? "Resolved" : "Open"}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap">
+                      {t.resolutionCost > 0 ? (
+                        `$${t.resolutionCost.toFixed(0)}`
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
                   </tr>
                   {expanded && (
                     <tr key={`${id}-details`} className="bg-slate-50/70">
                       <td colSpan={10} className="px-4 py-4">
-                        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                        <div className="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
                           <div className="space-y-3">
-                            <div>
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Product SKU IDs</p>
-                              <p className="mt-1 text-xs font-mono text-slate-700 whitespace-normal break-words">
-                                {t.skuCodes.length ? t.skuCodes.join(", ") : "—"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Products</p>
-                              <p className="mt-1 text-xs text-slate-700 whitespace-normal break-words">
-                                {t.skuItems.length ? t.skuItems.join(", ") : "—"}
-                              </p>
+                            <div className="grid grid-cols-2 gap-3 rounded-md border border-slate-200 bg-white p-3">
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Item</p>
+                                <p className="mt-1 text-sm font-medium text-slate-800 whitespace-normal break-words">
+                                  {t.reportedItemName ?? "—"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">SKU</p>
+                                <p className="mt-1 text-sm font-mono text-slate-800 whitespace-normal break-words">
+                                  {displaySku ?? "—"}
+                                </p>
+                              </div>
                             </div>
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Customer Message</p>
@@ -479,6 +651,52 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                                 {shortText(t.messageExcerpt)}
                               </p>
                             </div>
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Customer Photos</p>
+                              {t.photoUrls.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {t.photoUrls.map((photo, idx) => (
+                                    <button
+                                      key={`${photo.url}-${idx}`}
+                                      type="button"
+                                      onClick={() => setSelectedPhoto({ url: photo.url, name: photo.name })}
+                                      className="block h-20 w-20 overflow-hidden rounded-md border border-slate-200 bg-white"
+                                      title={photo.name ?? "Open photo"}
+                                    >
+                                      <img
+                                        src={photo.url}
+                                        alt={photo.name ?? `Customer photo ${idx + 1}`}
+                                        className="h-full w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-1 text-xs text-slate-700">—</p>
+                              )}
+                            </div>
+                            {(t.skuCodes.length || t.skuItems.length) && (
+                              <details className="rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                                <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                  All items in order
+                                </summary>
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Product SKU IDs</p>
+                                    <p className="mt-1 font-mono whitespace-normal break-words">
+                                      {t.skuCodes.length ? t.skuCodes.join(", ") : "—"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Products</p>
+                                    <p className="mt-1 whitespace-normal break-words">
+                                      {t.skuItems.length ? t.skuItems.join(", ") : "—"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </details>
+                            )}
                           </div>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
                             <div>
@@ -514,6 +732,10 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                               <p className="mt-1 text-slate-700">{t.resolutionCost > 0 ? `$${t.resolutionCost.toFixed(0)}` : "—"}</p>
                             </div>
                             <div className="col-span-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mold Sheet Reference</p>
+                              <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.resolutionReference ?? "—"}</p>
+                            </div>
+                            <div className="col-span-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Tags</p>
                               <p className="mt-1 text-slate-700 break-words">{t.tags ?? "—"}</p>
                             </div>
@@ -528,6 +750,29 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
           </tbody>
         </table>
       </div>
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-6"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div className="relative max-h-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute right-2 top-2 z-10 rounded bg-white/90 px-2 py-1 text-xs font-medium text-slate-700 shadow hover:bg-white"
+            >
+              Close
+            </button>
+            <img
+              src={selectedPhoto.url}
+              alt={selectedPhoto.name ?? "Customer photo"}
+              className="max-h-[85vh] max-w-full rounded-lg bg-white object-contain shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -558,9 +803,23 @@ export default function FoodSafetyPage() {
       });
   }, [filters.includeArrivedWarm]);
 
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = filters;
+
+  // Every summary below (KPIs, charts, table) reflects this selection.
   const tickets = useMemo(() => {
-    // No date filtering - show all data
-    return allTickets;
+    return allTickets.filter((t) => {
+      if (dateFrom && t.dateOfComplaint && t.dateOfComplaint < dateFrom) return false;
+      if (dateTo && t.dateOfComplaint && t.dateOfComplaint > dateTo) return false;
+      return true;
+    });
+  }, [allTickets, dateFrom, dateTo]);
+
+  const dataExtent = useMemo(() => {
+    const dates = allTickets
+      .map((t) => t.dateOfComplaint)
+      .filter((d): d is Date => d instanceof Date)
+      .sort((a, b) => a.getTime() - b.getTime());
+    return { start: dates[0] ?? null, end: dates[dates.length - 1] ?? null };
   }, [allTickets]);
   const kpis = useMemo(() => foodSafetyKpis(tickets), [tickets]);
   const concerns = useMemo(() => concernBreakdown(tickets), [tickets]);
@@ -613,7 +872,7 @@ export default function FoodSafetyPage() {
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Food Safety Complaints</h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              {allTickets.length} total records
+              {tickets.length} of {allTickets.length} records in selected period
               {lastUpdated &&
                 ` · most recent complaint ${lastUpdated.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
             </p>
@@ -624,18 +883,31 @@ export default function FoodSafetyPage() {
           </div>
         </div>
 
+        {/* Reporting period — drives every KPI, chart, and table row below */}
+        <DateRangeBar
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(from, to) => {
+            setDateFrom(from);
+            setDateTo(to);
+          }}
+          dataStart={dataExtent.start}
+          dataEnd={dataExtent.end}
+          count={tickets.length}
+        />
+
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard
             label="Complaints"
             value={kpis.totalComplaints.toString()}
-            sub="in period"
+            sub="in selected period"
             accent="blue"
           />
           <StatCard
             label="Total Cost"
             value={`$${kpis.totalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
-            sub="resolution cost"
+            sub="resolution cost in period"
             accent="neutral"
           />
           <StatCard
@@ -691,7 +963,7 @@ export default function FoodSafetyPage() {
         </div>
 
         {/* Ticket table */}
-        <Card title="Complaint Log" sub="Detailed ticket records">
+        <Card title="Complaint Log" sub="Detailed ticket records for the selected period">
           <TicketTable tickets={tickets} />
         </Card>
       </div>

@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export default function TopNav() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/login")) return null;
   return (
     <nav className="border-b border-slate-200 bg-white px-6 py-0 flex items-center h-12 gap-6">
       <Link href="/food-safety" className="flex items-center gap-2 shrink-0">
