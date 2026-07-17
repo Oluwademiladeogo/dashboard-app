@@ -46,6 +46,7 @@ type FoodSafetyApiRow = {
   messageExcerpt?: string | null;
   photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
   resolutionReference?: string | null;
+  classifierReasoning?: string | null;
 };
 
 type OpsApiRow = {
@@ -123,6 +124,7 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
           .filter((photo) => photo.url)
       : [],
     resolutionReference: str(r.resolutionReference),
+    classifierReasoning: str(r.classifierReasoning),
   }));
 }
 

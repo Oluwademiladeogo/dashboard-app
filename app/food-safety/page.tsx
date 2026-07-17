@@ -12,7 +12,6 @@ import {
 } from "@/lib/transforms";
 import { useFilterStore } from "@/lib/store";
 import type { FoodSafetyTicket } from "@/lib/types";
-import FilterBar from "@/components/filters/FilterBar";
 import HorizontalBar from "@/components/charts/HorizontalBar";
 import WeeklyTrend from "@/components/charts/WeeklyTrend";
 import DonutChart from "@/components/charts/DonutChart";
@@ -155,6 +154,8 @@ function DateRangeBar({
   dataStart,
   dataEnd,
   count,
+  includeArrivedWarm,
+  onToggleArrivedWarm,
 }: {
   dateFrom: Date | null;
   dateTo: Date | null;
@@ -162,6 +163,8 @@ function DateRangeBar({
   dataStart: Date | null;
   dataEnd: Date | null;
   count: number;
+  includeArrivedWarm: boolean;
+  onToggleArrivedWarm: () => void;
 }) {
   const today = new Date();
   const isAll = !dateFrom && !dateTo;
@@ -194,7 +197,7 @@ function DateRangeBar({
   const shownTo = dateTo ?? dataEnd;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-3">
+    <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex items-center gap-2 shrink-0">
         <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
@@ -238,8 +241,8 @@ function DateRangeBar({
         />
       </div>
 
-      <div className="ml-auto flex items-center gap-2 text-right">
-        <div>
+      <div className="ml-auto flex items-center gap-4">
+        <div className="text-right">
           <p className="text-sm font-semibold text-slate-900 leading-tight">
             {fmtRangeDate(shownFrom)} – {fmtRangeDate(shownTo)}
           </p>
@@ -248,6 +251,17 @@ function DateRangeBar({
             {count} complaint{count === 1 ? "" : "s"} summarized below
           </p>
         </div>
+        <button
+          onClick={onToggleArrivedWarm}
+          className={`cursor-pointer px-2.5 py-1 rounded-full text-xs font-medium border transition-all shrink-0 ${
+            includeArrivedWarm
+              ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+              : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
+          }`}
+          title="Arrived Warm is a transit issue and excluded from the food-safety log by default"
+        >
+          Include Arrived Warm
+        </button>
       </div>
     </div>
   );
@@ -732,6 +746,10 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                               <p className="mt-1 text-slate-700">{t.resolutionCost > 0 ? `$${t.resolutionCost.toFixed(0)}` : "—"}</p>
                             </div>
                             <div className="col-span-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Classifier Reasoning</p>
+                              <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.classifierReasoning ?? "—"}</p>
+                            </div>
+                            <div className="col-span-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mold Sheet Reference</p>
                               <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.resolutionReference ?? "—"}</p>
                             </div>
@@ -864,7 +882,20 @@ export default function FoodSafetyPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <FilterBar />
+      {/* Reporting period — sticky, drives every KPI, chart, and table row below */}
+      <DateRangeBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onChange={(from, to) => {
+          setDateFrom(from);
+          setDateTo(to);
+        }}
+        dataStart={dataExtent.start}
+        dataEnd={dataExtent.end}
+        count={tickets.length}
+        includeArrivedWarm={Boolean(filters.includeArrivedWarm)}
+        onToggleArrivedWarm={() => filters.setIncludeArrivedWarm(!filters.includeArrivedWarm)}
+      />
 
       <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
         {/* Page header */}
@@ -882,19 +913,6 @@ export default function FoodSafetyPage() {
             Live
           </div>
         </div>
-
-        {/* Reporting period — drives every KPI, chart, and table row below */}
-        <DateRangeBar
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onChange={(from, to) => {
-            setDateFrom(from);
-            setDateTo(to);
-          }}
-          dataStart={dataExtent.start}
-          dataEnd={dataExtent.end}
-          count={tickets.length}
-        />
 
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

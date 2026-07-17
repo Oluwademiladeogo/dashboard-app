@@ -34,6 +34,7 @@ export interface FoodSafetyTicket {
     contentType: string | null;
   }[];
   resolutionReference: string | null;
+  classifierReasoning: string | null;
 }
 
 export interface OpsTicket {

@@ -60,6 +60,7 @@ type Row = {
   gorgias_photo_urls?: unknown;
   reported_item_name?: string | null;
   gorgias_resolution_reference?: string | null;
+  classifier_reasoning?: string | null;
 };
 
 type SkuRow = {
@@ -207,6 +208,7 @@ export async function GET(request: NextRequest) {
       has("gorgias_photo_urls") ? "t.gorgias_photo_urls" : "NULL AS gorgias_photo_urls",
       has("reported_item_name") ? "t.reported_item_name" : "NULL AS reported_item_name",
       has("gorgias_resolution_reference") ? "t.gorgias_resolution_reference" : "NULL AS gorgias_resolution_reference",
+      has("classifier_reasoning") ? "t.classifier_reasoning" : "NULL AS classifier_reasoning",
     ];
 
     const isFoodSafetyClause = has("is_food_safety") ? "t.is_food_safety = 1" : "1 = 1";
@@ -345,6 +347,7 @@ export async function GET(request: NextRequest) {
         messageExcerpt: r.message_excerpt,
         photoUrls,
         resolutionReference: r.gorgias_resolution_reference ?? null,
+        classifierReasoning: r.classifier_reasoning ?? null,
       };
     });
 

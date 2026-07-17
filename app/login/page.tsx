@@ -85,10 +85,6 @@ function LoginForm() {
             {busy ? "Checking…" : "Unlock dashboard"}
           </button>
         </form>
-
-        <p className="text-[11px] text-slate-400 text-center mt-4">
-          Internal reporting — Elevate Foods CS &amp; Operations
-        </p>
       </div>
     </div>
   );
