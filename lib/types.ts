@@ -18,7 +18,7 @@ export interface FoodSafetyTicket {
   direction: string | null;
   correctiveAction: string | null;
   resolutionApplied: string | null;
-  resolutionSource: "db" | "tags" | "derived" | "gorgias_custom_field" | null;
+  resolutionSource: "db" | "derived" | "gorgias_custom_field" | null;
   resolutionComponents: string[];
   dateResolved: Date | null;
   resolutionCost: number;
@@ -26,7 +26,6 @@ export interface FoodSafetyTicket {
   isResolved: boolean;
   rootCause: string | null;
   needsReview: boolean;
-  tags: string | null;
   messageExcerpt: string | null;
   photoUrls: {
     url: string;

@@ -39,7 +39,6 @@ type Row = {
   customer_name: string | null;
   customer_email: string | null;
   order_number: string | null;
-  tags: string | null;
   status: string | null;
   subject: string | null;
   assignee_email: string | null;
@@ -139,9 +138,8 @@ function inferCategories(
   return unique;
 }
 
-function deriveRootCause(concerns: string[], tags: string | null): string {
-  const tagText = (tags ?? "").toLowerCase();
-  if (concerns.some((c) => ["Delayed", "Arrived Warm"].includes(c)) || tagText.includes("arrived warm")) {
+function deriveRootCause(concerns: string[]): string {
+  if (concerns.some((c) => ["Delayed", "Arrived Warm"].includes(c))) {
     return "Carrier Delay/Temperature";
   }
   if (concerns.some((c) => ["Misdelivered", "Not Received", "Wrong Address", "Lost in Transit"].includes(c))) {
@@ -187,7 +185,6 @@ export async function GET(request: NextRequest) {
       "t.customer_name",
       "t.customer_email",
       "t.order_number",
-      "t.tags",
       "t.status",
       "t.subject",
       "t.assignee_email",
@@ -219,14 +216,13 @@ export async function GET(request: NextRequest) {
     `.trim();
     let baseWhereClause = `WHERE ${isFoodSafetyClause} ${testCustomerFilter}`;
     if (!includeArrived) {
-      const arrivedWarmChecks = [
-        "t.tags LIKE '%Arrived Warm%'",
-        "t.tags LIKE '%Arrived warm%'",
-      ];
+      const arrivedWarmChecks: string[] = [];
       if (has("concerns")) {
         arrivedWarmChecks.push("t.concerns LIKE '%Arrived Warm%'", "t.concerns LIKE '%Arrived warm%'");
       }
-      baseWhereClause += ` AND NOT (${arrivedWarmChecks.join(" OR ")})`;
+      if (arrivedWarmChecks.length) {
+        baseWhereClause += ` AND NOT (${arrivedWarmChecks.join(" OR ")})`;
+      }
     }
 
     const [rows] = await pool.query(`
@@ -295,12 +291,13 @@ export async function GET(request: NextRequest) {
       const rawCategories = parseJson<string[]>(r.sku_categories, []);
       const skuCategories = inferCategories(rawCategories, skuItems, r.message_excerpt);
 
-      const parsed = parseResolution(r.resolution_applied, r.tags);
+      const parsed = parseResolution(r.resolution_applied, null);
       const dbResolutionCost = Number(r.resolution_cost ?? 0);
       const resolutionCost = dbResolutionCost > 0 ? dbResolutionCost : parsed.cost;
       const resolutionComponents = parseJson<string[]>(r.resolution_components, parsed.components);
-      const resolutionSource = (r.resolution_source as "db" | "tags" | "derived" | "gorgias_custom_field" | null) ?? parsed.source;
-      const rootCause = r.root_cause ?? deriveRootCause(allConcerns, r.tags);
+      const storedResolutionSource = r.resolution_source === "tags" ? null : r.resolution_source;
+      const resolutionSource = (storedResolutionSource as "db" | "derived" | "gorgias_custom_field" | null) ?? parsed.source;
+      const rootCause = r.root_cause ?? deriveRootCause(allConcerns);
       const needsReview = deriveNeedsReview(allConcerns, concerns, skuCategories, r);
       const explicitResolution = r.resolution_applied?.trim() || null;
       const hasAppliedResolution = Boolean(explicitResolution || parsed.hasAppliedResolution);
@@ -343,7 +340,6 @@ export async function GET(request: NextRequest) {
         isResolved: r.status === "closed",
         rootCause,
         needsReview,
-        tags: r.tags,
         messageExcerpt: r.message_excerpt,
         photoUrls,
         resolutionReference: r.gorgias_resolution_reference ?? null,

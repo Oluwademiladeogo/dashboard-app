@@ -94,8 +94,6 @@ export async function GET(req: NextRequest) {
 
   const channelFilters = req.nextUrl.searchParams.getAll("channel");
   const customerFilters = req.nextUrl.searchParams.getAll("customerType");
-  const tagFilters = req.nextUrl.searchParams.getAll("tag").map((tag) => tag.toLowerCase());
-
   try {
     const [ticketRows] = await pool.query(
       `SELECT ticket_id, ticket_created_at, channel, tags, total_orders_found, customer_type
@@ -105,15 +103,12 @@ export async function GET(req: NextRequest) {
       [start, end],
     );
     const tickets = ticketRows as TicketRow[];
-    const allTags = new Set<string>();
     const selected = tickets.filter((ticket) => {
       const tags = tagsOf(ticket.tags);
-      tags.forEach((tag) => allTags.add(tag));
       const channel = ticketChannel(ticket, tags);
       const ctype = customerType(ticket.customer_type, ticket.total_orders_found);
       return (!channelFilters.length || channelFilters.includes(channel))
-        && (!customerFilters.length || customerFilters.includes(ctype))
-        && (!tagFilters.length || tags.some((tag) => tagFilters.includes(tag.toLowerCase())));
+        && (!customerFilters.length || customerFilters.includes(ctype));
     });
 
     const [messageColumns] = await pool.query("SHOW COLUMNS FROM gorgias_messages");
@@ -178,7 +173,6 @@ export async function GET(req: NextRequest) {
       options: {
         channels: channelOptions,
         customerTypes: ["Lead", "New (1 Order)", "Recurring"],
-        tags: [...allTags].sort((a, b) => a.localeCompare(b)),
       },
       coverage,
       definitions: {

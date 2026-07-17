@@ -34,7 +34,7 @@ type FoodSafetyApiRow = {
   direction?: string | null;
   correctiveAction?: string | null;
   resolutionApplied?: string | null;
-  resolutionSource?: "db" | "tags" | "derived" | "gorgias_custom_field" | null;
+  resolutionSource?: "db" | "derived" | "gorgias_custom_field" | null;
   resolutionComponents?: string[] | null;
   dateResolved?: string | null;
   resolutionCost?: number;
@@ -42,7 +42,6 @@ type FoodSafetyApiRow = {
   isResolved?: boolean;
   rootCause?: string | null;
   needsReview?: boolean;
-  tags?: string | null;
   messageExcerpt?: string | null;
   photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
   resolutionReference?: string | null;
@@ -112,7 +111,6 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     isResolved: Boolean(r.isResolved),
     rootCause: str(r.rootCause),
     needsReview: Boolean(r.needsReview),
-    tags: str(r.tags),
     messageExcerpt: str(r.messageExcerpt),
     photoUrls: Array.isArray(r.photoUrls)
       ? r.photoUrls

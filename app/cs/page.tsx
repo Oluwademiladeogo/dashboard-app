@@ -65,7 +65,7 @@ interface ExplorerResult {
     frtDisplay: string;
     frtCount: number;
   };
-  options: { channels: string[]; customerTypes: string[]; tags: string[] };
+  options: { channels: string[]; customerTypes: string[] };
   coverage: { messageRows: number; from: string | null; to: string | null };
   definitions: { sms: string; frt: string };
 }
@@ -74,6 +74,7 @@ const KINDS = [
   { key: "7d", label: "Last 7 Days" },
   { key: "14d", label: "Last 14 Days" },
   { key: "week", label: "Weekly (Thu–Wed)" },
+  { key: "custom", label: "Custom" },
 ];
 const CHANNEL_ORDER = ["Email", "Chat", "Help Center", "SMS"];
 const CTYPE_ORDER = ["Lead", "New (1 Order)", "Recurring"];
@@ -178,8 +179,13 @@ function isoDate(d: Date) {
 }
 
 export default function CsMetricsPage() {
+  const [today] = useState(() => isoDate(new Date()));
   const [kind, setKind] = useState("7d");
   const [weekStart, setWeekStart] = useState<string | null>(null);
+  const [customStart, setCustomStart] = useState(() => isoDate(new Date(Date.now() - 6 * 86400000)));
+  const [customEnd, setCustomEnd] = useState(() => isoDate(new Date()));
+  const [customResult, setCustomResult] = useState<ExplorerResult | null>(null);
+  const [customLoading, setCustomLoading] = useState(false);
   const [result, setResult] = useState<{
     key: string; metrics: Metrics | null; windows: WindowInfo[];
   } | null>(null);
@@ -187,6 +193,7 @@ export default function CsMetricsPage() {
 
   const requestKey = `${kind}|${weekStart ?? ""}`;
   useEffect(() => {
+    if (kind === "custom") return;
     let cancelled = false;
     const params = new URLSearchParams({ kind });
     if (kind === "week" && weekStart) params.set("start", weekStart);
@@ -200,8 +207,33 @@ export default function CsMetricsPage() {
     return () => { cancelled = true; };
   }, [kind, weekStart, requestKey]);
 
-  const loading = result?.key !== requestKey;
-  const metrics = loading ? null : result?.metrics ?? null;
+  useEffect(() => {
+    if (kind !== "custom") return;
+    let cancelled = false;
+    const params = new URLSearchParams({ start: customStart, end: customEnd });
+    fetch(`/api/cs-explorer?${params}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Custom range failed");
+        return data as ExplorerResult;
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setCustomResult(data);
+          setCustomLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomResult(null);
+          setCustomLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [kind, customStart, customEnd]);
+
+  const loading = kind === "custom" ? customLoading : result?.key !== requestKey;
+  const metrics = kind === "custom" || loading ? null : result?.metrics ?? null;
   const windows = useMemo(() => result?.windows ?? [], [result]);
 
   const loadReports = useCallback(() => {
@@ -252,7 +284,15 @@ export default function CsMetricsPage() {
             <h1 className="text-xl font-bold text-slate-900">CS Metrics</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Segmented value={kind} onChange={(k) => { setKind(k); setWeekStart(null); }} options={KINDS} />
+            <Segmented
+              value={kind}
+              onChange={(k) => {
+                setKind(k);
+                setWeekStart(null);
+                if (k === "custom") setCustomLoading(true);
+              }}
+              options={KINDS}
+            />
             {kind === "week" && weekOptions.length > 0 && (
               <select
                 className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-slate-700 bg-white"
@@ -266,6 +306,28 @@ export default function CsMetricsPage() {
                 ))}
               </select>
             )}
+            {kind === "custom" && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1">
+                <input
+                  type="date"
+                  value={customStart}
+                  max={customEnd}
+                  onChange={(e) => { setCustomLoading(true); setCustomStart(e.target.value); }}
+                  aria-label="Custom range start"
+                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  min={customStart}
+                  max={today}
+                  onChange={(e) => { setCustomLoading(true); setCustomEnd(e.target.value); }}
+                  aria-label="Custom range end"
+                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -277,7 +339,17 @@ export default function CsMetricsPage() {
           </div>
         )}
 
-        <FilterExplorer />
+        {kind === "custom" && !customLoading && customResult && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard accent="blue" label="Tickets Created"
+              value={customResult.metrics.ticketsCreated.toLocaleString()} />
+            <StatCard label="Messages Sent"
+              value={customResult.metrics.messagesSent.toLocaleString()} />
+            <StatCard accent="amber" label="First Response"
+              value={customResult.metrics.frtDisplay || "n/a"}
+              sub={`${customResult.metrics.frtCount} replied tickets`} />
+          </div>
+        )}
 
         {metrics && (
           <>
@@ -386,14 +458,14 @@ export default function CsMetricsPage() {
 
             {/* heatmap */}
             {heatHours.length > 0 && (
-              <Card title="Busiest Times" sub="tickets created per weekday × hour">
+              <Card title="Busiest Times">
                 <div className="overflow-x-auto">
-                  <table className="text-[11px]">
+                  <table className="w-full table-fixed text-[11px]">
                     <thead>
                       <tr>
-                        <th className="pr-3 py-1 text-left text-slate-500 font-medium">Hour</th>
+                        <th className="w-16 pr-3 py-1 text-left text-slate-500 font-medium">Hour</th>
                         {WEEKDAYS.map((d) => (
-                          <th key={d} className="px-1 py-1 text-slate-500 font-medium w-14">{d}</th>
+                          <th key={d} className="px-1 py-1 text-slate-500 font-medium">{d}</th>
                         ))}
                       </tr>
                     </thead>
@@ -408,7 +480,7 @@ export default function CsMetricsPage() {
                             return (
                               <td key={d} className="px-0.5 py-0.5">
                                 <div
-                                  className="h-6 w-14 rounded flex items-center justify-center tabular-nums"
+                                  className="h-7 w-full rounded flex items-center justify-center tabular-nums"
                                   style={{ backgroundColor: bg, color: depth > 0.55 ? "white" : "#334155" }}
                                   title={`${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 — ${v} tickets`}
                                 >
@@ -431,7 +503,7 @@ export default function CsMetricsPage() {
 
         <GenerateReport onGenerated={loadReports} />
 
-        <Card title="Generated Reports" sub="weekly Excel + PDF from the droplet cron, plus anything you generate below">
+        <Card title="Generated Reports">
           {reports.length === 0 ? (
             <p className="text-xs text-slate-400">No generated files yet.</p>
           ) : (
@@ -450,146 +522,6 @@ export default function CsMetricsPage() {
   );
 }
 
-// ── Gorgias-style filter explorer ────────────────────────────────────────────
-function FilterExplorer() {
-  const [today] = useState(() => new Date());
-  const [start, setStart] = useState(() => isoDate(new Date(today.getTime() - 6 * 86400000)));
-  const [end, setEnd] = useState(() => isoDate(today));
-  const [channels, setChannels] = useState<string[]>([]);
-  const [customerTypes, setCustomerTypes] = useState<string[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagSearch, setTagSearch] = useState("");
-  const [result, setResult] = useState<ExplorerResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams({ start, end });
-    channels.forEach((value) => params.append("channel", value));
-    customerTypes.forEach((value) => params.append("customerType", value));
-    tags.forEach((value) => params.append("tag", value));
-    fetch(`/api/cs-explorer?${params}`)
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Filter request failed");
-        return data as ExplorerResult;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setResult(data);
-        setError("");
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Filter request failed");
-        setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [start, end, channels, customerTypes, tags]);
-
-  const toggle = (value: string, values: string[], setter: (next: string[]) => void) => {
-    setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
-  };
-  const presets = (days: number) => {
-    setEnd(isoDate(today));
-    setStart(isoDate(new Date(today.getTime() - (days - 1) * 86400000)));
-  };
-  const visibleTags = (result?.options.tags ?? [])
-    .filter((tag) => tag.toLowerCase().includes(tagSearch.toLowerCase()))
-    .slice(0, 40);
-  const filterChip = (value: string, values: string[], setter: (next: string[]) => void) => (
-    <button
-      key={value}
-      onClick={() => toggle(value, values, setter)}
-      className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-        values.includes(value)
-          ? "border-blue-600 bg-blue-600 text-white"
-          : "border-slate-300 bg-white text-slate-600 hover:border-slate-400"
-      }`}
-    >
-      {value}
-    </button>
-  );
-
-  return (
-    <Card
-      title="Filter Explorer"
-      sub="Live metrics from the reporting database · SMS mirrors Gorgias Tag > klaviyo-sms"
-      headerRight={(channels.length + customerTypes.length + tags.length > 0) && (
-        <button
-          onClick={() => { setChannels([]); setCustomerTypes([]); setTags([]); }}
-          className="text-[11px] font-medium text-blue-700 hover:underline"
-        >
-          Clear filters
-        </button>
-      )}
-    >
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="mr-2 flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-            {[7, 14, 30, 90].map((days) => (
-              <button key={days} onClick={() => presets(days)}
-                className="rounded-md px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-white hover:shadow-sm">
-                {days}d
-              </button>
-            ))}
-          </div>
-          <label className="text-[11px] font-medium text-slate-500">
-            From
-            <input type="date" value={start} max={end} onChange={(e) => setStart(e.target.value)}
-              className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700" />
-          </label>
-          <label className="text-[11px] font-medium text-slate-500">
-            To
-            <input type="date" value={end} min={start} max={isoDate(today)}
-              onChange={(e) => setEnd(e.target.value)}
-              className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700" />
-          </label>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Channel</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(result?.options.channels ?? ["Email", "Chat", "Help Center", "SMS"]).map((value) =>
-                filterChip(value, channels, setChannels))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Customer Type</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(result?.options.customerTypes ?? ["Lead", "New (1 Order)", "Recurring"]).map((value) =>
-                filterChip(value, customerTypes, setCustomerTypes))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Tag</p>
-            <input value={tagSearch} onChange={(e) => setTagSearch(e.target.value)}
-              placeholder="Find a tag…"
-              className="mb-2 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs" />
-            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
-              {visibleTags.map((value) => filterChip(value, tags, setTags))}
-            </div>
-          </div>
-        </div>
-
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard accent="blue" label="Tickets Created"
-            value={loading ? "…" : (result?.metrics.ticketsCreated ?? 0).toLocaleString()} />
-          <StatCard label="Messages Sent"
-            value={loading ? "…" : (result?.metrics.messagesSent ?? 0).toLocaleString()} />
-          <StatCard accent="amber" label="First Response"
-            value={loading ? "…" : result?.metrics.frtDisplay || "n/a"}
-            sub={result ? `${result.metrics.frtCount} replied tickets` : undefined} />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 // ── schedule editor ───────────────────────────────────────────────────────────
 function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: string }[] }) {
   const monday = useMemo(() => {
@@ -604,7 +536,6 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   const [manualAgents, setManualAgents] = useState<{ email: string; name: string }[]>([]);
   const [newAgent, setNewAgent] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [expanded, setExpanded] = useState(false);
 
   const agents = useMemo(() => {
     const seen = new Set<string>();
@@ -710,78 +641,75 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   );
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center justify-between gap-3 p-5 text-left"
-        aria-expanded={expanded}
-      >
-        <div>
-          <h3 className="text-sm font-semibold text-slate-800">Team Schedule</h3>
-          <p className="mt-0.5 text-xs text-slate-400">Feeds TPH — expand to review or edit attendance</p>
+    <Card
+      title="Team Schedule"
+      headerRight={(
+        <div className="flex items-center gap-3">
+          <span
+            className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
+            title="Click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off"
+            aria-label="Schedule status guide"
+          >
+            ?
+          </span>
+          {headerRight}
         </div>
-        <svg className={`h-4 w-4 text-slate-500 transition-transform ${expanded ? "rotate-180" : ""}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
-      {expanded && (
-        <div className="border-t border-slate-200 px-5 pb-5 pt-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
-              Click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off
-            </p>
-            {headerRight}
-          </div>
+      )}
+    >
           <div className="overflow-x-auto">
-        <table className="min-w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className={`${TH} text-left`}>Agent</th>
-              {weekDates.map((d, i) => (
-                <th key={d} className={`${TH} text-center`}>
-                  {WEEKDAYS[i]}<br /><span className="text-slate-400 normal-case font-normal">{fmtDate(d)}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {agents.map((agent) => (
-              <tr key={agent.email} className="hover:bg-slate-50/60">
-                <td className={`${TD} font-semibold text-slate-900`} title={agent.email}>{agent.name}</td>
-                {weekDates.map((date) => {
-                  const status = rows[`${agent.email}|${date}`]?.status ?? defaultStatus(date);
-                  return (
-                    <td key={date} className="px-2 py-1.5 text-center">
-                      <button
-                        onClick={() => cycle(agent.email, agent.name, date)}
-                        className={`w-9 h-7 rounded text-xs font-semibold ${STATUS_STYLE[status]}`}
-                        title={`${status} — click to change`}
-                      >
-                        {STATUS_SHORT[status]}
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            <table className="min-w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className={`${TH} text-left`}>Agent</th>
+                  {weekDates.map((d, i) => (
+                    <th key={d} className={`${TH} text-center`}>
+                      {WEEKDAYS[i]}<br /><span className="text-slate-400 normal-case font-normal">{fmtDate(d)}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {agents.map((agent) => (
+                  <tr key={agent.email} className="hover:bg-slate-50/60">
+                    <td className={`${TD} font-semibold text-slate-900`} title={agent.email}>{agent.name}</td>
+                    {weekDates.map((date) => {
+                      const status = rows[`${agent.email}|${date}`]?.status ?? defaultStatus(date);
+                      return (
+                        <td key={date} className="px-2 py-1.5 text-center">
+                          <button
+                            onClick={() => cycle(agent.email, agent.name, date)}
+                            className={`w-9 h-7 rounded text-xs font-semibold ${STATUS_STYLE[status]}`}
+                            title={`${status} — click to change`}
+                          >
+                            {STATUS_SHORT[status]}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           <div className="flex items-center gap-2 mt-3">
             <input
               value={newAgent}
               onChange={(e) => setNewAgent(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addAgent()}
-              placeholder="add agent email…"
-              className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs w-64"
+              placeholder="Agent email"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-9 w-80 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 caret-blue-600 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
-            <button onClick={addAgent} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs hover:border-slate-400">Add</button>
+            <button
+              onClick={addAgent}
+              disabled={!newAgent.trim()}
+              className="h-9 rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Add
+            </button>
           </div>
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }
 
@@ -854,7 +782,7 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
   };
 
   return (
-    <Card title="Generate a Report" sub="Build the Excel + PDF for any date range, on demand (separate from the weekly cron)">
+    <Card title="Generate a Report">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs text-slate-600">
           From

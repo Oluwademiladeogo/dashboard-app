@@ -318,8 +318,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
       (t.skuItems ?? []).some((item) => item.toLowerCase().includes(q)) ||
       (t.perceivedConcern ?? "").toLowerCase().includes(q) ||
       (t.correctiveAction ?? "").toLowerCase().includes(q) ||
-      (t.messageExcerpt ?? "").toLowerCase().includes(q) ||
-      (t.tags ?? "").toLowerCase().includes(q)
+      (t.messageExcerpt ?? "").toLowerCase().includes(q)
     );
   }, [tickets, search]);
 
@@ -525,34 +524,36 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                 aria-expanded={expanded}
               >
                     <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(expanded ? null : id);
-                        }}
-                        className="mr-1 cursor-pointer text-slate-400 hover:text-slate-700"
-                        aria-label={expanded ? "Hide details" : "Show details"}
-                      >
-                        {expanded ? "−" : "+"}
-                      </button>
-                      {t.gorgiasLink ? (
-                        <a
-                          href={t.gorgiasLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex rounded-md bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 hover:text-blue-900 hover:underline"
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedId(expanded ? null : id);
+                          }}
+                          className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          aria-label={expanded ? "Hide details" : "Show details"}
                         >
-                          {t.shopifyOrderNumber
+                          {expanded ? "−" : "+"}
+                        </button>
+                        {t.gorgiasLink ? (
+                          <a
+                            href={t.gorgiasLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex rounded-md bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 hover:text-blue-900 hover:underline"
+                          >
+                            {t.shopifyOrderNumber
+                              ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
+                              : "—"}
+                          </a>
+                        ) : (
+                          t.shopifyOrderNumber
                             ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
-                            : "—"}
-                        </a>
-                      ) : (
-                        t.shopifyOrderNumber
-                          ? `#${t.shopifyOrderNumber.replace(/[^0-9]/g, "")}`
-                          : "—"
-                      )}
+                            : "—"
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">
                       {fmtDate(t.dateOfComplaint)}
@@ -685,6 +686,20 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                             )}
                           </div>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                            {t.gorgiasLink && (
+                              <div className="col-span-2 flex justify-end">
+                                <a
+                                  href={t.gorgiasLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                                >
+                                  View in Gorgias
+                                  <span aria-hidden="true">↗</span>
+                                </a>
+                              </div>
+                            )}
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Complaint</p>
                               <p className="mt-1 text-slate-700">{fullDate(t.dateOfComplaint)}</p>
@@ -724,10 +739,6 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                             <div className="col-span-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mold Sheet Reference</p>
                               <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.resolutionReference ?? "—"}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Tags</p>
-                              <p className="mt-1 text-slate-700 break-words">{t.tags ?? "—"}</p>
                             </div>
                           </div>
                         </div>
@@ -832,7 +843,7 @@ export default function FoodSafetyPage() {
 
   if (loading)
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex items-center gap-2 text-slate-400 text-sm">
           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
