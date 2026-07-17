@@ -25,7 +25,6 @@ export interface FoodSafetyTicket {
   hasAppliedResolution: boolean;
   isResolved: boolean;
   rootCause: string | null;
-  needsReview: boolean;
   messageExcerpt: string | null;
   photoUrls: {
     url: string;
@@ -33,7 +32,6 @@ export interface FoodSafetyTicket {
     contentType: string | null;
   }[];
   resolutionReference: string | null;
-  classifierReasoning: string | null;
 }
 
 export interface OpsTicket {

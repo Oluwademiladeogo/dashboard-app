@@ -11,26 +11,6 @@ const FOOD_SAFETY_CONCERNS = new Set([
   "Contamination",
 ]);
 
-const NON_FOOD_CONTEXT = new Set([
-  "Arrived Warm",
-  "Damaged",
-  "Damaged in Transit",
-  "Missing/Wrong Item",
-  "Quality Issue",
-  "Delayed",
-  "Lost in Transit",
-  "Misdelivered",
-  "Not Received",
-  "Wrong Address",
-  "Cancellation",
-  "Subscription Skip",
-  "Subscription Change",
-  "Billing Dispute",
-  "Address Change",
-  "Substitution Complaint",
-  "Other",
-]);
-
 type Row = {
   ticket_id: string | number;
   ticket_created_at: Date | string | null;
@@ -152,22 +132,6 @@ function deriveRootCause(concerns: string[]): string {
     return "Product/Packaging";
   }
   return "Needs Review";
-}
-
-function deriveNeedsReview(
-  allConcerns: string[],
-  foodSafetyConcerns: string[],
-  skuCategories: string[],
-  row: Row,
-): boolean {
-  if (!foodSafetyConcerns.length) return true;
-  if (!row.message_excerpt) return true;
-  if (row.classified_by && row.classified_by !== "haiku") return true;
-  if (row.tag_audit) return true;
-  if (allConcerns.some((c) => NON_FOOD_CONTEXT.has(c))) return true;
-  if (skuCategories.length !== 1 || skuCategories.includes("Multiple Item")) return true;
-  if (row.needs_review != null) return Boolean(row.needs_review);
-  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -298,7 +262,6 @@ export async function GET(request: NextRequest) {
       const storedResolutionSource = r.resolution_source === "tags" ? null : r.resolution_source;
       const resolutionSource = (storedResolutionSource as "db" | "derived" | "gorgias_custom_field" | null) ?? parsed.source;
       const rootCause = r.root_cause ?? deriveRootCause(allConcerns);
-      const needsReview = deriveNeedsReview(allConcerns, concerns, skuCategories, r);
       const explicitResolution = r.resolution_applied?.trim() || null;
       const hasAppliedResolution = Boolean(explicitResolution || parsed.hasAppliedResolution);
       const photoUrls = parseJson<{ url?: string; name?: string | null; contentType?: string | null; content_type?: string | null }[]>(
@@ -339,11 +302,9 @@ export async function GET(request: NextRequest) {
         hasAppliedResolution,
         isResolved: r.status === "closed",
         rootCause,
-        needsReview,
         messageExcerpt: r.message_excerpt,
         photoUrls,
         resolutionReference: r.gorgias_resolution_reference ?? null,
-        classifierReasoning: r.classifier_reasoning ?? null,
       };
     });
 

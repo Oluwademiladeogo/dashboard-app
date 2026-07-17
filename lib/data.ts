@@ -41,11 +41,9 @@ type FoodSafetyApiRow = {
   hasAppliedResolution?: boolean;
   isResolved?: boolean;
   rootCause?: string | null;
-  needsReview?: boolean;
   messageExcerpt?: string | null;
   photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
   resolutionReference?: string | null;
-  classifierReasoning?: string | null;
 };
 
 type OpsApiRow = {
@@ -110,7 +108,6 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     hasAppliedResolution: Boolean(r.hasAppliedResolution),
     isResolved: Boolean(r.isResolved),
     rootCause: str(r.rootCause),
-    needsReview: Boolean(r.needsReview),
     messageExcerpt: str(r.messageExcerpt),
     photoUrls: Array.isArray(r.photoUrls)
       ? r.photoUrls
@@ -122,7 +119,6 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
           .filter((photo) => photo.url)
       : [],
     resolutionReference: str(r.resolutionReference),
-    classifierReasoning: str(r.classifierReasoning),
   }));
 }
 

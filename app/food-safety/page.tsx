@@ -721,20 +721,12 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                               <p className="mt-1 text-slate-700">{t.rootCause ?? "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Needs Review</p>
-                              <p className="mt-1 text-slate-700">{t.needsReview ? "Yes" : "No"}</p>
-                            </div>
-                            <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Resolution</p>
                               <p className="mt-1 text-slate-700">{t.resolutionApplied ?? "—"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Cost</p>
                               <p className="mt-1 text-slate-700">{t.resolutionCost > 0 ? `$${t.resolutionCost.toFixed(0)}` : "—"}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Classifier Reasoning</p>
-                              <p className="mt-1 text-slate-700 whitespace-pre-wrap">{t.classifierReasoning ?? "—"}</p>
                             </div>
                             <div className="col-span-2">
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mold Sheet Reference</p>
