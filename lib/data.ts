@@ -21,6 +21,7 @@ type FoodSafetyApiRow = {
   orderFulfilledAt?: string | null;
   customerName?: string | null;
   skuInQuestion?: string | null;
+  reportedItemName?: string | null;
   skuItems?: string[] | null;
   skuCodes?: string[] | null;
   skuCategories?: string[] | null;
@@ -33,7 +34,7 @@ type FoodSafetyApiRow = {
   direction?: string | null;
   correctiveAction?: string | null;
   resolutionApplied?: string | null;
-  resolutionSource?: "db" | "tags" | "derived" | null;
+  resolutionSource?: "db" | "tags" | "derived" | "gorgias_custom_field" | null;
   resolutionComponents?: string[] | null;
   dateResolved?: string | null;
   resolutionCost?: number;
@@ -43,6 +44,8 @@ type FoodSafetyApiRow = {
   needsReview?: boolean;
   tags?: string | null;
   messageExcerpt?: string | null;
+  photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
+  resolutionReference?: string | null;
 };
 
 type OpsApiRow = {
@@ -87,6 +90,7 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     orderFulfilledAt: parseDate(r.orderFulfilledAt),
     customerName: str(r.customerName),
     skuInQuestion: str(r.skuInQuestion),
+    reportedItemName: str(r.reportedItemName),
     skuItems: Array.isArray(r.skuItems) ? r.skuItems : [],
     skuCodes: Array.isArray(r.skuCodes) ? r.skuCodes : [],
     skuCategories: Array.isArray(r.skuCategories) ? r.skuCategories : [],
@@ -109,6 +113,16 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     needsReview: Boolean(r.needsReview),
     tags: str(r.tags),
     messageExcerpt: str(r.messageExcerpt),
+    photoUrls: Array.isArray(r.photoUrls)
+      ? r.photoUrls
+          .map((photo) => ({
+            url: str(photo.url) ?? "",
+            name: str(photo.name),
+            contentType: str(photo.contentType),
+          }))
+          .filter((photo) => photo.url)
+      : [],
+    resolutionReference: str(r.resolutionReference),
   }));
 }
 

@@ -30,19 +30,11 @@ export function skuPareto(
   tickets: FoodSafetyTicket[],
   topN = 10
 ): { sku: string; count: number }[] {
-  // Prefer skuItems (actual Shopify product names) when available.
-  // Fall back to skuCategories only for tickets with no linked order.
+  // Count the reported issue item, not every item in the customer's box.
   const counts: Record<string, number> = {};
   for (const t of tickets) {
-    const items = t.skuItems?.filter(Boolean) ?? [];
-    if (items.length > 0) {
-      for (const item of items) counts[item] = (counts[item] ?? 0) + 1;
-    } else {
-      for (const cat of t.skuCategories ?? []) {
-        if (!cat) continue;
-        counts[cat] = (counts[cat] ?? 0) + 1;
-      }
-    }
+    const item = t.reportedItemName ?? t.skuInQuestion ?? t.skuItems?.[0] ?? t.skuCategories?.[0] ?? "Unknown";
+    counts[item] = (counts[item] ?? 0) + 1;
   }
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
@@ -54,8 +46,8 @@ export function skuPareto(
 export function concernBreakdown(
   tickets: FoodSafetyTicket[]
 ): { concern: string; count: number }[] {
-  // Multi-valued: a ticket with both Mold and Arrived Warm contributes to
-  // each slice. Totals can exceed the ticket count by design.
+  // Multi-valued: a ticket with both Mold and Broken Seal contributes to each
+  // slice. Totals can exceed ticket count by design.
   const counts: Record<string, number> = {};
   for (const t of tickets) {
     const concerns = t.concerns?.length ? t.concerns : [normaliseConcern(t.perceivedConcern)];
@@ -73,8 +65,9 @@ export function concernCostImpact(
   for (const t of tickets) {
     if (!t.hasAppliedResolution || t.resolutionCost <= 0) continue;
     const concerns = t.concerns?.length ? t.concerns : [normaliseConcern(t.perceivedConcern)];
+    const allocatedCost = t.resolutionCost / Math.max(1, concerns.length);
     for (const c of concerns) {
-      totals[c] = (totals[c] ?? 0) + t.resolutionCost;
+      totals[c] = (totals[c] ?? 0) + allocatedCost;
     }
   }
   return Object.entries(totals)

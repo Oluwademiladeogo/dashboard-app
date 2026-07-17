@@ -3,7 +3,7 @@ const PARTIAL_RESHIP_COST = 30;
 const EXTRA_MEAT_OR_CHEESE_COST = 10;
 const EXTRA_ACCOMPANIMENT_COST = 6;
 
-export type ResolutionSource = "db" | "tags" | "derived" | null;
+export type ResolutionSource = "db" | "tags" | "derived" | "gorgias_custom_field" | null;
 
 export type ParsedResolution = {
   label: string | null;

@@ -5,6 +5,7 @@ export interface FoodSafetyTicket {
   orderFulfilledAt: Date | null;
   customerName: string | null;
   skuInQuestion: string | null;
+  reportedItemName: string | null;
   skuItems: string[];
   skuCodes: string[];
   skuCategories: string[];
@@ -17,7 +18,7 @@ export interface FoodSafetyTicket {
   direction: string | null;
   correctiveAction: string | null;
   resolutionApplied: string | null;
-  resolutionSource: "db" | "tags" | "derived" | null;
+  resolutionSource: "db" | "tags" | "derived" | "gorgias_custom_field" | null;
   resolutionComponents: string[];
   dateResolved: Date | null;
   resolutionCost: number;
@@ -27,6 +28,12 @@ export interface FoodSafetyTicket {
   needsReview: boolean;
   tags: string | null;
   messageExcerpt: string | null;
+  photoUrls: {
+    url: string;
+    name: string | null;
+    contentType: string | null;
+  }[];
+  resolutionReference: string | null;
 }
 
 export interface OpsTicket {

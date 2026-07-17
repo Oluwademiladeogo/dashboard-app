@@ -57,6 +57,9 @@ type Row = {
   resolution_source: string | null;
   root_cause: string | null;
   needs_review: number | boolean | null;
+  gorgias_photo_urls?: unknown;
+  reported_item_name?: string | null;
+  gorgias_resolution_reference?: string | null;
 };
 
 type SkuRow = {
@@ -201,6 +204,9 @@ export async function GET(request: NextRequest) {
       has("resolution_source") ? "t.resolution_source" : "NULL AS resolution_source",
       has("root_cause") ? "t.root_cause" : "NULL AS root_cause",
       has("needs_review") ? "t.needs_review" : "NULL AS needs_review",
+      has("gorgias_photo_urls") ? "t.gorgias_photo_urls" : "NULL AS gorgias_photo_urls",
+      has("reported_item_name") ? "t.reported_item_name" : "NULL AS reported_item_name",
+      has("gorgias_resolution_reference") ? "t.gorgias_resolution_reference" : "NULL AS gorgias_resolution_reference",
     ];
 
     const isFoodSafetyClause = has("is_food_safety") ? "t.is_food_safety = 1" : "1 = 1";
@@ -226,7 +232,7 @@ export async function GET(request: NextRequest) {
       FROM gorgias_tickets t
       ${baseWhereClause}
       ORDER BY t.ticket_created_at DESC
-      LIMIT 1000
+      LIMIT 5000
     `);
 
     const ticketRows = rows as Row[];
@@ -291,9 +297,21 @@ export async function GET(request: NextRequest) {
       const dbResolutionCost = Number(r.resolution_cost ?? 0);
       const resolutionCost = dbResolutionCost > 0 ? dbResolutionCost : parsed.cost;
       const resolutionComponents = parseJson<string[]>(r.resolution_components, parsed.components);
-      const resolutionSource = (r.resolution_source as "db" | "tags" | "derived" | null) ?? parsed.source;
+      const resolutionSource = (r.resolution_source as "db" | "tags" | "derived" | "gorgias_custom_field" | null) ?? parsed.source;
       const rootCause = r.root_cause ?? deriveRootCause(allConcerns, r.tags);
       const needsReview = deriveNeedsReview(allConcerns, concerns, skuCategories, r);
+      const explicitResolution = r.resolution_applied?.trim() || null;
+      const hasAppliedResolution = Boolean(explicitResolution || parsed.hasAppliedResolution);
+      const photoUrls = parseJson<{ url?: string; name?: string | null; contentType?: string | null; content_type?: string | null }[]>(
+        r.gorgias_photo_urls,
+        [],
+      )
+        .map((photo) => ({
+          url: String(photo.url ?? "").trim(),
+          name: photo.name ?? null,
+          contentType: photo.contentType ?? photo.content_type ?? null,
+        }))
+        .filter((photo) => photo.url);
 
       return {
         idNumber: Number(r.ticket_id),
@@ -302,6 +320,7 @@ export async function GET(request: NextRequest) {
         orderFulfilledAt: r.order_fulfilled_at,
         customerName: r.customer_name ?? r.customer_email,
         skuInQuestion: skuCodes.length ? skuCodes.join(", ") : fallbackSku,
+        reportedItemName: r.reported_item_name ?? null,
         skuItems,
         skuCodes,
         skuCategories,
@@ -312,18 +331,20 @@ export async function GET(request: NextRequest) {
         gorgiasLink: `https://appyhour.gorgias.com/app/ticket/${r.ticket_id}`,
         ceoComments: null,
         direction: null,
-        correctiveAction: parsed.label,
-        resolutionApplied: r.resolution_applied ?? parsed.label,
+        correctiveAction: explicitResolution ?? parsed.label,
+        resolutionApplied: explicitResolution ?? parsed.label,
         resolutionSource,
         resolutionComponents,
         dateResolved: r.resolution_applied_at ?? r.ticket_closed_at,
-        resolutionCost: parsed.hasAppliedResolution ? resolutionCost : 0,
-        hasAppliedResolution: parsed.hasAppliedResolution,
+        resolutionCost: hasAppliedResolution ? resolutionCost : 0,
+        hasAppliedResolution,
         isResolved: r.status === "closed",
         rootCause,
         needsReview,
         tags: r.tags,
         messageExcerpt: r.message_excerpt,
+        photoUrls,
+        resolutionReference: r.gorgias_resolution_reference ?? null,
       };
     });
 
