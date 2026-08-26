@@ -19,6 +19,7 @@ type FoodSafetyApiRow = {
   shopifyOrderNumber?: string | null;
   dateOfComplaint?: string | null;
   orderFulfilledAt?: string | null;
+  orderFulfilledSource?: string | null;
   customerName?: string | null;
   skuInQuestion?: string | null;
   reportedItemName?: string | null;
@@ -47,6 +48,14 @@ type FoodSafetyApiRow = {
   firstAgentResponseAt?: string | null;
   photoUrls?: { url?: string | null; name?: string | null; contentType?: string | null }[] | null;
   resolutionReference?: string | null;
+};
+
+export type FoodSafetyMeta = {
+  total_tickets: number;
+  food_safety_tickets: number;
+  last_synced_at: string | null;
+  last_classified_at: string | null;
+  latest_ticket_at: string | null;
 };
 
 type OpsApiRow = {
@@ -89,6 +98,7 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
     shopifyOrderNumber: str(r.shopifyOrderNumber),
     dateOfComplaint: parseDate(r.dateOfComplaint),
     orderFulfilledAt: parseDate(r.orderFulfilledAt),
+    orderFulfilledSource: r.orderFulfilledSource ?? null,
     customerName: str(r.customerName),
     skuInQuestion: str(r.skuInQuestion),
     reportedItemName: str(r.reportedItemName),
@@ -126,6 +136,19 @@ export async function fetchFoodSafety(includeArrivedWarm: boolean = false): Prom
       : [],
     resolutionReference: str(r.resolutionReference),
   }));
+}
+
+export async function fetchFoodSafetyMeta(): Promise<FoodSafetyMeta> {
+  const res = await fetch('/api/food-safety?meta=1', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Failed to fetch food-safety sync status: ${res.status}`);
+  const raw = (await res.json()) as Partial<FoodSafetyMeta>;
+  return {
+    total_tickets: Number(raw.total_tickets) || 0,
+    food_safety_tickets: Number(raw.food_safety_tickets) || 0,
+    last_synced_at: raw.last_synced_at ?? null,
+    last_classified_at: raw.last_classified_at ?? null,
+    latest_ticket_at: raw.latest_ticket_at ?? null,
+  };
 }
 
 // Ops Tickets

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ── payload types (mirror cs-metrics-report/cs_metrics/metrics.py) ───────────
 interface Cell {
@@ -15,7 +15,7 @@ interface AgentRow {
   messages_sent: number;
   tickets_touched: number;
   csat: number | null;
-  csat_count: number;
+  csat_count: number | null;
   days_worked: number;
   schedule_source: string;
   tph: number | null;
@@ -25,14 +25,38 @@ interface Metrics {
   window_end: string;
   timezone: string;
   generated_at: string;
+  source?: {
+    provider?: string;
+    dataset?: string;
+    auth_mode?: string;
+    reporting_endpoint?: string;
+    timezone?: string;
+  };
   summary: {
     tickets_created: number;
-    tickets_closed: number;
+    tickets_closed: number | null;
     messages_sent: number;
     frt_display: string;
+    frt_seconds: number | null;
     resolution_display: string;
+    resolution_seconds: number | null;
     csat_avg: number | null;
     csat_count: number;
+  };
+  sla?: {
+    source?: string;
+    policy_identifier?: string[];
+    evaluated: number;
+    achieved: number;
+    breached: number;
+    pending: number;
+    achievement_rate: number | null;
+    daily: Record<string, {
+      evaluated: number;
+      achieved: number;
+      breached: number;
+      pending: number;
+    }>;
   };
   channel_table: Record<string, Record<string, Cell>>;
   agents: Record<string, AgentRow>;
@@ -63,8 +87,9 @@ interface ExplorerResult {
     messagesSent: number;
     frtSeconds: number | null;
     frtDisplay: string;
-    frtCount: number;
+    frtCount: number | null;
   };
+  providerMetrics?: Metrics;
   options: { channels: string[]; customerTypes: string[] };
   coverage: { messageRows: number; from: string | null; to: string | null };
   definitions: { sms: string; frt: string };
@@ -78,6 +103,7 @@ const KINDS = [
 ];
 const CHANNEL_ORDER = ["Email", "Chat", "Help Center", "SMS"];
 const CTYPE_ORDER = ["Lead", "New (1 Order)", "Recurring"];
+const DRIVER_ORDER = ["All customer types", "New (1 Order)", "Recurring"];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATUS_CYCLE = ["present", "half_day", "leave", "sick", "absent", "off"];
 const STATUS_STYLE: Record<string, string> = {
@@ -94,11 +120,18 @@ const STATUS_SHORT: Record<string, string> = {
 
 // ── shared UI primitives (mirrors app/cost/page.tsx & app/food-safety) ───────
 const ACCENT_STYLES = {
-  blue: "border-t-blue-500 bg-blue-50/40",
-  green: "border-t-emerald-500 bg-emerald-50/40",
-  amber: "border-t-amber-500 bg-amber-50/40",
-  red: "border-t-red-500 bg-red-50/40",
-  neutral: "border-t-slate-300 bg-white",
+  blue: "bg-blue-50/40",
+  green: "bg-emerald-50/40",
+  amber: "bg-amber-50/40",
+  red: "bg-red-50/40",
+  neutral: "bg-white",
+} as const;
+const ACCENT_DOTS = {
+  blue: "bg-blue-500",
+  green: "bg-emerald-500",
+  amber: "bg-amber-500",
+  red: "bg-red-500",
+  neutral: "bg-slate-300",
 } as const;
 const VALUE_STYLES = {
   blue: "text-blue-700",
@@ -113,8 +146,11 @@ function StatCard({ label, value, sub, accent = "neutral" }: {
   label: string; value: string; sub?: string; accent?: Accent;
 }) {
   return (
-    <div className={`rounded-lg border border-slate-200 border-t-2 p-4 ${ACCENT_STYLES[accent]}`}>
-      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">{label}</p>
+    <div className={`rounded-xl border border-slate-200 p-4 ${ACCENT_STYLES[accent]}`}>
+      <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        <span className={`h-1.5 w-1.5 rounded-full ${ACCENT_DOTS[accent]}`} aria-hidden="true" />
+        {label}
+      </p>
       <p className={`text-2xl font-bold leading-none ${VALUE_STYLES[accent]}`}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-1.5">{sub}</p>}
     </div>
@@ -126,7 +162,7 @@ function Card({ title, sub, children, headerRight, className = "" }: {
   headerRight?: React.ReactNode; className?: string;
 }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
+    <div className={`rounded-xl border border-slate-200 bg-white p-5 ${className}`}>
       {(title || headerRight) && (
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -150,7 +186,7 @@ function Segmented<T extends string>({ value, onChange, options }: {
         <button
           key={o.key}
           onClick={() => onChange(o.key)}
-          className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+          className={`min-h-8 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
             value === o.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
           }`}
         >
@@ -158,6 +194,36 @@ function Segmented<T extends string>({ value, onChange, options }: {
         </button>
       ))}
     </div>
+  );
+}
+
+function MetricRail({ metrics }: { metrics: Metrics }) {
+  const sla = metrics.sla;
+  const rate = sla?.achievement_rate;
+  const items = [
+    { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "provider total", tone: "text-slate-900" },
+    { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: `${sla?.achieved ?? 0} / ${sla?.evaluated ?? 0} evaluated`, tone: "text-emerald-700" },
+    { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "SLA breaches", tone: "text-rose-700" },
+    { label: "Median first response", value: metrics.summary.frt_display || "n/a", detail: "24/7 median", tone: "text-amber-700" },
+    { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: `${metrics.summary.csat_count} responses`, tone: "text-sky-700" },
+  ];
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label="CS performance summary">
+      <div className="grid grid-cols-2 gap-px bg-slate-200 md:grid-cols-[1.25fr_repeat(5,minmax(0,1fr))]">
+        <div className="col-span-2 bg-blue-50/70 px-5 py-5 md:col-span-1 md:px-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">Tickets created</p>
+          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">{metrics.summary.tickets_created.toLocaleString()}</p>
+          <p className="mt-2 text-xs text-slate-500">Volume in selected window</p>
+        </div>
+        {items.map((item) => (
+          <div key={item.label} className="bg-white px-5 py-5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
+            <p className={`mt-3 text-xl font-semibold tracking-tight ${item.tone}`}>{item.value}</p>
+            <p className="mt-2 text-[11px] text-slate-500">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -186,50 +252,90 @@ export default function CsMetricsPage() {
   const [customEnd, setCustomEnd] = useState(() => isoDate(new Date()));
   const [customResult, setCustomResult] = useState<ExplorerResult | null>(null);
   const [customLoading, setCustomLoading] = useState(false);
+  const customStartRef = useRef<HTMLInputElement>(null);
+  const customEndRef = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<{
     key: string; metrics: Metrics | null; windows: WindowInfo[];
   } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportFile[]>([]);
+  const [reportsOpen, setReportsOpen] = useState(false);
 
   const requestKey = `${kind}|${weekStart ?? ""}`;
+  const openDatePicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+    const input = ref.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    input?.focus();
+    try { input?.showPicker?.(); } catch { /* some browsers require direct input activation */ }
+  };
   useEffect(() => {
     if (kind === "custom") return;
     let cancelled = false;
     const params = new URLSearchParams({ kind });
     if (kind === "week" && weekStart) params.set("start", weekStart);
     fetch(`/api/cs-metrics?${params}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || "Metrics request failed");
+        return data;
+      })
       .then((data) => {
         if (cancelled) return;
+        setLoadError(null);
         setResult({ key: requestKey, metrics: data.metrics, windows: data.windows ?? [] });
       })
-      .catch(() => !cancelled && setResult({ key: requestKey, metrics: null, windows: [] }));
+      .catch(() => {
+        if (!cancelled) {
+          setLoadError("Could not load this snapshot. Try again shortly.");
+          setResult({ key: requestKey, metrics: null, windows: [] });
+        }
+      });
     return () => { cancelled = true; };
   }, [kind, weekStart, requestKey]);
 
   useEffect(() => {
     if (kind !== "custom") return;
     let cancelled = false;
-    const params = new URLSearchParams({ start: customStart, end: customEnd });
-    fetch(`/api/cs-explorer?${params}`)
-      .then(async (response) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async (jobId: string) => {
+      try {
+        const response = await fetch(`/api/cs-explorer?job=${encodeURIComponent(jobId)}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Custom range failed");
-        return data as ExplorerResult;
-      })
-      .then((data) => {
-        if (!cancelled) {
-          setCustomResult(data);
-          setCustomLoading(false);
+        if (data.status === "done") {
+          if (!cancelled) {
+            setLoadError(null);
+            setCustomResult(data as ExplorerResult);
+            setCustomLoading(false);
+          }
+          return;
         }
-      })
-      .catch(() => {
+        if (data.status === "error") throw new Error(data.error || "Custom range failed");
+        if (!cancelled) timer = setTimeout(() => { void poll(jobId); }, 5000);
+      } catch {
         if (!cancelled) {
+          setLoadError("Could not run this custom range. Try again shortly.");
           setCustomResult(null);
           setCustomLoading(false);
         }
-      });
-    return () => { cancelled = true; };
+      }
+    };
+    const start = async () => {
+      try {
+        const params = new URLSearchParams({ start: customStart, end: customEnd });
+        const response = await fetch(`/api/cs-explorer?${params}`);
+        const data = await response.json();
+        if (!response.ok && response.status !== 202) throw new Error(data.error || "Custom range failed");
+        if (data.status !== "running" || !data.jobId) throw new Error("Custom range did not start");
+        await poll(data.jobId);
+      } catch {
+        if (!cancelled) {
+          setLoadError("Could not start this custom range. Try again shortly.");
+          setCustomResult(null);
+          setCustomLoading(false);
+        }
+      }
+    };
+    void start();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [kind, customStart, customEnd]);
 
   const loading = kind === "custom" ? customLoading : result?.key !== requestKey;
@@ -276,20 +382,23 @@ export default function CsMetricsPage() {
     : [];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
-        {/* header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen bg-[#f5f7fb]">
+      <div className="mx-auto max-w-screen-xl space-y-5 px-4 py-5 sm:px-6 sm:py-7">
+        <header className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <h1 className="text-xl font-bold text-slate-900">CS Metrics</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">CS performance</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <Segmented
               value={kind}
               onChange={(k) => {
                 setKind(k);
                 setWeekStart(null);
-                if (k === "custom") setCustomLoading(true);
+                setLoadError(null);
+                if (k === "custom") {
+                  setCustomLoading(true);
+                  requestAnimationFrame(() => openDatePicker(customStartRef));
+                }
               }}
               options={KINDS}
             />
@@ -307,35 +416,57 @@ export default function CsMetricsPage() {
               </select>
             )}
             {kind === "custom" && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1">
+              <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1">
                 <input
+                  ref={customStartRef}
                   type="date"
                   value={customStart}
                   max={customEnd}
                   onChange={(e) => { setCustomLoading(true); setCustomStart(e.target.value); }}
                   aria-label="Custom range start"
-                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none"
+                  onClick={() => openDatePicker(customStartRef)}
+                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                 />
                 <span className="text-xs text-slate-400">to</span>
                 <input
+                  ref={customEndRef}
                   type="date"
                   value={customEnd}
                   min={customStart}
                   max={today}
                   onChange={(e) => { setCustomLoading(true); setCustomEnd(e.target.value); }}
                   aria-label="Custom range end"
-                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none"
+                  onClick={() => openDatePicker(customEndRef)}
+                  className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                 />
               </div>
             )}
           </div>
-        </div>
+        </header>
 
-        {loading && <p className="text-sm text-slate-400">Loading…</p>}
-        {!loading && !metrics && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            No snapshot for this window yet. The collector cron writes 7/14-day snapshots daily and
-            weekly snapshots every Thursday; run <code>run_report.py</code> on the droplet to backfill.
+        {loading && (
+          <div className="grid gap-3 md:grid-cols-3" aria-label="Loading metrics">
+            {["w-full", "w-4/5", "w-3/5"].map((width) => (
+              <div key={width} className="h-24 animate-pulse rounded-xl border border-slate-200 bg-white p-5">
+                <div className={`h-3 ${width} rounded bg-slate-200`} />
+                <div className="mt-4 h-6 w-1/2 rounded bg-slate-100" />
+              </div>
+            ))}
+          </div>
+        )}
+        {kind === "custom" && customLoading && (
+          <p className="text-xs font-medium text-slate-500">Loading selected range…</p>
+        )}
+        {!loading && loadError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">
+            <p className="font-semibold">Metrics unavailable</p>
+            <p className="mt-1 text-red-800">{loadError}</p>
+          </div>
+        )}
+        {!loading && !loadError && !metrics && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <p className="font-semibold">No snapshot for this window yet.</p>
+            <p className="mt-1 text-amber-800">Daily snapshots refresh at 10:15 UTC; weekly reports refresh Thursdays at 12:30 UTC.</p>
           </div>
         )}
 
@@ -345,25 +476,49 @@ export default function CsMetricsPage() {
               value={customResult.metrics.ticketsCreated.toLocaleString()} />
             <StatCard label="Messages Sent"
               value={customResult.metrics.messagesSent.toLocaleString()} />
-            <StatCard accent="amber" label="First Response"
+            <StatCard accent="amber" label="Median First Response"
               value={customResult.metrics.frtDisplay || "n/a"}
-              sub={`${customResult.metrics.frtCount} replied tickets`} />
+              sub="Gorgias 24/7 median" />
           </div>
         )}
 
         {metrics && (
           <>
-            {/* KPI row */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              <StatCard accent="blue" label="Tickets Created" value={metrics.summary.tickets_created.toLocaleString()} />
-              <StatCard label="Tickets Closed" value={metrics.summary.tickets_closed.toLocaleString()} />
-              <StatCard label="Messages Sent" value={metrics.summary.messages_sent.toLocaleString()} />
-              <StatCard accent="amber" label="First Response" value={metrics.summary.frt_display || "n/a"} sub="avg, created in window" />
-              <StatCard label="Resolution Time" value={metrics.summary.resolution_display || "n/a"} sub="avg, closed in window" />
-              <StatCard accent="green" label="Average CSAT"
-                value={metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a"}
-                sub={`${metrics.summary.csat_count} responses`} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-400">Generated {new Date(metrics.generated_at).toLocaleString()}</p>
             </div>
+            <MetricRail metrics={metrics} />
+
+            {metrics.sla && (
+              <Card title="Daily SLA">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className={`${TH} text-left`}>Date</th>
+                        <th className={`${TH} text-right`}>Evaluated</th>
+                        <th className={`${TH} text-right`}>Achieved</th>
+                        <th className={`${TH} text-right`}>Breached</th>
+                        <th className={`${TH} text-right`}>Pending</th>
+                        <th className={`${TH} text-right`}>Achievement Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {Object.entries(metrics.sla.daily).map(([date, row]) => (
+                        <tr key={date} className="hover:bg-slate-50/60">
+                          <td className={`${TD} font-medium`}>{fmtDate(date)}</td>
+                          <td className={`${TD} text-right tabular-nums`}>{row.evaluated.toLocaleString()}</td>
+                          <td className={`${TD} text-right tabular-nums text-emerald-700`}>{row.achieved.toLocaleString()}</td>
+                          <td className={`${TD} text-right tabular-nums text-red-700`}>{row.breached.toLocaleString()}</td>
+                          <td className={`${TD} text-right tabular-nums`}>{row.pending.toLocaleString()}</td>
+                          <td className={`${TD} text-right tabular-nums`}>{row.evaluated ? `${((row.achieved / row.evaluated) * 100).toFixed(1)}%` : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
 
             {/* channel × customer type */}
             <Card title="Channel × Customer Type">
@@ -396,7 +551,6 @@ export default function CsMetricsPage() {
             {/* team */}
             <Card
               title="Team"
-              sub="Total Tickets = messages sent · TPH = tickets ÷ (days × 7.5h)"
               headerRight={(
                 <span
                   className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
@@ -426,7 +580,7 @@ export default function CsMetricsPage() {
                         <td className={`${TD} text-right tabular-nums`}>{a.tph ?? "—"}</td>
                         <td className={`${TD} text-right tabular-nums`}>{a.messages_sent.toLocaleString()}</td>
                         <td className={`${TD} text-right tabular-nums`}>{a.tickets_touched.toLocaleString()}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{a.csat != null ? `${a.csat.toFixed(2)} (${a.csat_count})` : "—"}</td>
+                        <td className={`${TD} text-right tabular-nums`}>{a.csat != null ? `${a.csat.toFixed(2)}${a.csat_count != null ? ` (${a.csat_count})` : ""}` : "—"}</td>
                         <td className={`${TD} text-right tabular-nums`}>
                           {a.days_worked}
                           {a.schedule_source === "default" && (
@@ -442,8 +596,8 @@ export default function CsMetricsPage() {
 
             {/* top drivers */}
             <div className="grid md:grid-cols-3 gap-4">
-              {CTYPE_ORDER.filter((t) => metrics.top_drivers[t]?.length).map((section) => (
-                <Card key={section} title={`${section} — Top Drivers`}>
+              {DRIVER_ORDER.filter((t) => metrics.top_drivers[t]?.length).map((section) => (
+                <Card key={section} title={`${section} — Contact Reasons`}>
                   <div className="divide-y divide-slate-100">
                     {metrics.top_drivers[section].slice(0, 6).map(([driver, count]) => (
                       <div key={driver} className="flex items-center justify-between py-1.5 text-xs">
@@ -503,8 +657,23 @@ export default function CsMetricsPage() {
 
         <GenerateReport onGenerated={loadReports} />
 
-        <Card title="Generated Reports">
-          {reports.length === 0 ? (
+        <Card
+          title="Generated Reports"
+          sub="Weekly and on-demand downloads"
+          headerRight={(
+            <button
+              onClick={() => setReportsOpen((open) => !open)}
+              aria-expanded={reportsOpen}
+              className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            >
+              {reportsOpen ? "Hide" : "Expand"}
+              <svg className={`h-3.5 w-3.5 transition-transform ${reportsOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01.02 1.06l-4.25 4.51a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+        >
+          {reportsOpen && (reports.length === 0 ? (
             <p className="text-xs text-slate-400">No generated files yet.</p>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -515,7 +684,7 @@ export default function CsMetricsPage() {
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </Card>
       </div>
     </div>
@@ -536,6 +705,7 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   const [manualAgents, setManualAgents] = useState<{ email: string; name: string }[]>([]);
   const [newAgent, setNewAgent] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [expanded, setExpanded] = useState(false);
 
   const agents = useMemo(() => {
     const seen = new Set<string>();
@@ -640,10 +810,24 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
     </div>
   );
 
+  const expandButton = (
+    <button
+      onClick={() => setExpanded((open) => !open)}
+      aria-expanded={expanded}
+      className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+    >
+      {expanded ? "Hide" : "Expand"}
+      <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+      </svg>
+    </button>
+  );
+
   return (
     <Card
       title="Team Schedule"
-      headerRight={(
+      sub="Optional schedule inputs for TPH"
+      headerRight={expanded ? (
         <div className="flex items-center gap-3">
           <span
             className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
@@ -654,8 +838,10 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
           </span>
           {headerRight}
         </div>
-      )}
+      ) : expandButton}
     >
+      {expanded && (
+        <>
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -678,7 +864,7 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
                         <td key={date} className="px-2 py-1.5 text-center">
                           <button
                             onClick={() => cycle(agent.email, agent.name, date)}
-                            className={`w-9 h-7 rounded text-xs font-semibold ${STATUS_STYLE[status]}`}
+                            className={`w-9 h-7 rounded text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${STATUS_STYLE[status]}`}
                             title={`${status} — click to change`}
                           >
                             {STATUS_SHORT[status]}
@@ -709,6 +895,8 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
               Add
             </button>
           </div>
+        </>
+      )}
     </Card>
   );
 }
@@ -728,6 +916,7 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
   const [surveys, setSurveys] = useState(true);
   const [job, setJob] = useState<JobState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const poll = useCallback((id: string, onDone: () => void) => {
     let tries = 0;
@@ -782,7 +971,23 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
   };
 
   return (
-    <Card title="Generate a Report">
+    <Card
+      title="Generate a Report"
+      sub="Create a provider-backed Excel and PDF for any date range"
+      headerRight={(
+        <button
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+        >
+          {expanded ? "Hide" : "Expand"}
+          <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01.02 1.06l-4.25 4.51a.75.75 0 01-1.06-1.04L8.46 11.99 4.2 7.48a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
+    >
+      {expanded && <>
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs text-slate-600">
           From
@@ -799,7 +1004,7 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
           Include CSAT <span className="text-slate-400">(slower)</span>
         </label>
         <button onClick={generate} disabled={busy}
-          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium disabled:opacity-50">
+          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:opacity-50">
           {busy ? "Generating…" : "Generate"}
         </button>
       </div>
@@ -825,6 +1030,7 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
           Generation failed{job.error ? `: ${job.error}` : ""}. Check the droplet logs (logs/ondemand-*.log).
         </p>
       )}
+      </>}
     </Card>
   );
 }
