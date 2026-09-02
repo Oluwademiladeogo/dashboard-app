@@ -34,13 +34,15 @@ export const useFilterStore = create<FilterStore>()(
       resetFilters: () => set(defaultState()),
     }),
     {
-      name: "dashboard-filters-v4",
+      // v4 could preserve an old custom range indefinitely, making a healthy
+      // sync look stale after deployment. Start this release from live data.
+      name: "dashboard-filters-v5",
       // Dates don't survive JSON serialisation as Date objects
       storage: {
         getItem: (name) => {
           // Clear old filter keys
           if (typeof window !== 'undefined') {
-            ['dashboard-filters-v2', 'dashboard-filters-v3'].forEach(k => localStorage.removeItem(k));
+            ['dashboard-filters-v2', 'dashboard-filters-v3', 'dashboard-filters-v4'].forEach(k => localStorage.removeItem(k));
           }
           const raw = localStorage.getItem(name);
           if (!raw) return null;

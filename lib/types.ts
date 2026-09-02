@@ -3,6 +3,7 @@ export interface FoodSafetyTicket {
   shopifyOrderNumber: string | null;
   dateOfComplaint: Date | null;
   orderFulfilledAt: Date | null;
+  orderFulfilledSource: string | null;
   customerName: string | null;
   skuInQuestion: string | null;
   reportedItemName: string | null;

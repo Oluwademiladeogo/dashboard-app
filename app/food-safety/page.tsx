@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useState, useMemo } from "react";
-import { fetchFoodSafety } from "@/lib/data";
+import { Fragment, useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { fetchFoodSafety, fetchFoodSafetyMeta, type FoodSafetyMeta } from "@/lib/data";
 import {
   foodSafetyKpis,
   concernBreakdown,
@@ -27,11 +27,18 @@ interface StatProps {
 }
 
 const ACCENT_STYLES = {
-  blue: "border-t-blue-500 bg-blue-50/40",
-  green: "border-t-emerald-500 bg-emerald-50/40",
-  amber: "border-t-amber-500 bg-amber-50/40",
-  red: "border-t-red-500 bg-red-50/40",
-  neutral: "border-t-slate-300 bg-white",
+  blue: "bg-blue-50/40",
+  green: "bg-emerald-50/40",
+  amber: "bg-amber-50/40",
+  red: "bg-red-50/40",
+  neutral: "bg-white",
+};
+const ACCENT_DOTS = {
+  blue: "bg-blue-500",
+  green: "bg-emerald-500",
+  amber: "bg-amber-500",
+  red: "bg-red-500",
+  neutral: "bg-slate-300",
 };
 const VALUE_STYLES = {
   blue: "text-blue-700",
@@ -44,9 +51,10 @@ const VALUE_STYLES = {
 function StatCard({ label, value, sub, accent = "neutral" }: StatProps) {
   return (
     <div
-      className={`rounded-lg border border-slate-200 border-t-2 p-4 ${ACCENT_STYLES[accent]}`}
+      className={`rounded-xl border border-slate-200 p-4 ${ACCENT_STYLES[accent]}`}
     >
-      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+      <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        <span className={`h-1.5 w-1.5 rounded-full ${ACCENT_DOTS[accent]}`} aria-hidden="true" />
         {label}
       </p>
       <p className={`text-2xl font-bold leading-none ${VALUE_STYLES[accent]}`}>
@@ -72,7 +80,7 @@ function Card({
   headerRight?: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-5 ${className}`}>
+    <div className={`rounded-xl border border-slate-200 bg-white p-5 ${className}`}>
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
@@ -100,12 +108,12 @@ function PeriodSelector({
     { key: "quarterly", label: "Quarterly" },
   ];
   return (
-    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+    <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
       {periods.map((p) => (
         <button
           key={p.key}
           onClick={() => onChange(p.key)}
-          className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`min-h-8 cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
             value === p.key
               ? "bg-white text-slate-900 shadow-sm"
               : "text-slate-500 hover:text-slate-700"
@@ -167,6 +175,8 @@ function DateRangeBar({
   onToggleArrivedWarm: () => void;
 }) {
   const [customOpen, setCustomOpen] = useState(false);
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
   const today = new Date();
   const isAll = !dateFrom && !dateTo;
   const activeKey = isAll
@@ -180,11 +190,19 @@ function DateRangeBar({
     onChange(startOfDay(new Date(today.getTime() - (days - 1) * 86400000)), endOfDay(today));
   };
 
+  const openPicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+    const input = ref.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    input?.focus();
+    try { input?.showPicker?.(); } catch { /* some browsers require direct input activation */ }
+  };
+  const openFromPicker = () => openPicker(fromRef);
+  const openToPicker = () => openPicker(toRef);
+
   const chip = (key: string, label: string, onClick: () => void) => (
     <button
       key={key}
       onClick={onClick}
-      className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+          className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
         activeKey === key
           ? "bg-white text-slate-900 shadow-sm"
           : "text-slate-500 hover:text-slate-700"
@@ -198,7 +216,7 @@ function DateRangeBar({
   const shownTo = dateTo ?? dataEnd;
 
   return (
-    <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="sticky top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
       <div className="flex items-center gap-2 shrink-0">
         <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
@@ -213,15 +231,16 @@ function DateRangeBar({
         </span>
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+      <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
         {RANGE_PRESETS.map((p) => chip(p.key, p.label, () => applyPreset(p.days)))}
         {chip("all", "All time", () => onChange(null, null))}
-        {chip("custom", "Custom", () => setCustomOpen((open) => !open))}
+        {chip("custom", "Custom", () => setCustomOpen(true))}
       </div>
 
       {customOpen && (
         <div className="flex items-center gap-1.5">
           <input
+            ref={fromRef}
             type="date"
             value={toInputValue(dateFrom)}
             max={toInputValue(dateTo) || undefined}
@@ -229,10 +248,12 @@ function DateRangeBar({
               onChange(e.target.value ? startOfDay(new Date(`${e.target.value}T00:00:00`)) : null, dateTo)
             }
             aria-label="Custom reporting period from date"
+            onClick={openFromPicker}
             className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
           <span className="text-xs text-slate-400">to</span>
           <input
+            ref={toRef}
             type="date"
             value={toInputValue(dateTo)}
             min={toInputValue(dateFrom) || undefined}
@@ -240,12 +261,13 @@ function DateRangeBar({
               onChange(dateFrom, e.target.value ? endOfDay(new Date(`${e.target.value}T00:00:00`)) : null)
             }
             aria-label="Custom reporting period to date"
+            onClick={openToPicker}
             className="h-8 w-[132px] rounded-md border border-slate-300 px-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
         </div>
       )}
 
-      <div className="ml-auto flex items-center gap-4">
+      <div className="ml-auto flex items-center gap-3">
         <div className="text-right">
           <p className="text-sm font-semibold text-slate-900 leading-tight">
             {fmtRangeDate(shownFrom)} – {fmtRangeDate(shownTo)}
@@ -257,7 +279,7 @@ function DateRangeBar({
         </div>
         <button
           onClick={onToggleArrivedWarm}
-          className={`cursor-pointer px-2.5 py-1 rounded-md text-xs font-medium border transition-all shrink-0 ${
+          className={`cursor-pointer shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
             includeArrivedWarm
               ? "bg-blue-600 text-white border-blue-600 shadow-sm"
               : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
@@ -306,19 +328,51 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string | null } | null>(null);
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return tickets.filter(
-      (t) =>
-        !q ||
-      (t.shopifyOrderNumber ?? "").toLowerCase().includes(q) ||
-      (t.customerName ?? "").toLowerCase().includes(q) ||
-      (t.skuInQuestion ?? "").toLowerCase().includes(q) ||
-      (t.reportedItemName ?? "").toLowerCase().includes(q) ||
-      (t.skuCodes ?? []).some((sku) => sku.toLowerCase().includes(q)) ||
-      (t.skuItems ?? []).some((item) => item.toLowerCase().includes(q)) ||
-      (t.perceivedConcern ?? "").toLowerCase().includes(q) ||
-      (t.correctiveAction ?? "").toLowerCase().includes(q) ||
-      (t.messageExcerpt ?? "").toLowerCase().includes(q)
+    // Search supports: multiple terms (ANDed), "quoted phrases", -negation,
+    // and field prefixes  concern: item: sku: order: customer: action: status: type:
+    // Previously this was a single substring OR'd across fields, so `tray mold` matched
+    // nothing (treated as one literal) and `tray` matched no trays at all — they are named
+    // "Rosé All Day", "Aprés Ski", etc. `type:tray` now resolves that via the TR- SKU prefix.
+    const FIELDS: Record<string, (t: FoodSafetyTicket) => string> = {
+      order: (t) => `${t.shopifyOrderNumber ?? ""}`,
+      customer: (t) => `${t.customerName ?? ""}`,
+      sku: (t) => [t.skuInQuestion ?? "", ...(t.skuCodes ?? [])].join(" "),
+      item: (t) => [t.reportedItemName ?? "", ...(t.skuItems ?? [])].join(" "),
+      concern: (t) => [t.perceivedConcern ?? "", ...(t.concerns ?? [])].join(" "),
+      action: (t) => `${t.correctiveAction ?? ""}`,
+      status: (t) => (t.isResolved ? "resolved" : "open"),
+      text: (t) => [t.messageExcerpt ?? "", t.rootCause ?? ""].join(" "),
+    };
+    const allText = (t: FoodSafetyTicket) =>
+      Object.values(FIELDS).map((f) => f(t)).join(" ").toLowerCase();
+    const isTray = (t: FoodSafetyTicket) =>
+      (t.skuCodes ?? []).some((s) => /^TR-/i.test(s.trim()));
+
+    // tokenize: keep "quoted phrases" intact, allow a leading - for negation
+    const tokens = (search.match(/-?(?:[a-zA-Z]+:)?"[^"]*"|\S+/g) ?? [])
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (!tokens.length) return tickets;
+
+    return tickets.filter((t) =>
+      tokens.every((tok) => {
+        let neg = false;
+        let term = tok;
+        if (term.startsWith("-")) { neg = true; term = term.slice(1); }
+        const m = term.match(/^([a-zA-Z]+):(.*)$/);
+        let hit: boolean;
+        if (m && (m[1].toLowerCase() === "type")) {
+          const v = m[2].replace(/"/g, "").toLowerCase();
+          hit = v === "tray" ? isTray(t) : allText(t).includes(v);
+        } else if (m && FIELDS[m[1].toLowerCase()]) {
+          const v = m[2].replace(/"/g, "").toLowerCase();
+          hit = FIELDS[m[1].toLowerCase()](t).toLowerCase().includes(v);
+        } else {
+          const v = term.replace(/"/g, "").toLowerCase();
+          hit = allText(t).includes(v);
+        }
+        return neg ? !hit : hit;
+      })
     );
   }, [tickets, search]);
 
@@ -427,7 +481,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
           </svg>
           <input
             type="text"
-            placeholder="Search by order #, customer, SKU, concern…"
+            placeholder="Search — e.g.  mold tray   ·   type:tray concern:mold   ·   item:lonza -warm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full border border-slate-300 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -465,7 +519,7 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                 onSort={handleSort}
               />
               <TicketTh
-                label="Fulfilled_Date"
+                label="Ship Date"
                 field="orderFulfilledAt"
                 w="w-[8%]"
                 sortField={sortField}
@@ -559,6 +613,12 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">
                       {fmtDate(t.orderFulfilledAt)}
+                      {t.orderFulfilledAt && t.orderFulfilledSource === "recharge_ship_property" && (
+                        <span
+                          title="Estimated — real fulfillment date unavailable (order older than Shopify's 60-day window). May be inaccurate."
+                          className="ml-1 text-amber-500 cursor-help"
+                        >~</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-800 max-w-[130px] truncate font-medium">
                       {t.customerName ?? "—"}
@@ -786,27 +846,48 @@ function TicketTable({ tickets }: { tickets: FoodSafetyTicket[] }) {
 export default function FoodSafetyPage() {
   const [allTickets, setAllTickets] = useState<FoodSafetyTicket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [syncMeta, setSyncMeta] = useState<FoodSafetyMeta | null>(null);
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("weekly");
+  const [clock, setClock] = useState(() => Date.now());
   const filters = useFilterStore();
 
-  useEffect(() => {
-    fetchFoodSafety(filters.includeArrivedWarm)
-      .then((data) => {
+  const loadData = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    else setRefreshing(true);
+    try {
+      const [data, meta] = await Promise.all([
+        fetchFoodSafety(filters.includeArrivedWarm),
+        fetchFoodSafetyMeta(),
+      ]);
         setAllTickets(data);
         const latest = data
           .map((t) => t.dateOfComplaint)
           .filter((d): d is Date => d instanceof Date)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
         setLastUpdated(latest);
-        setLoading(false);
-      })
-      .catch((e: unknown) => {
+        setSyncMeta(meta);
+        setError(null);
+      } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Failed to load data");
+      } finally {
         setLoading(false);
-      });
+        setRefreshing(false);
+      }
   }, [filters.includeArrivedWarm]);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => { void loadData(true); }, 0);
+    const timer = window.setInterval(() => { void loadData(false); }, 5 * 60 * 1000);
+    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+  }, [loadData]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const { dateFrom, dateTo, setDateFrom, setDateTo } = filters;
 
@@ -847,28 +928,34 @@ export default function FoodSafetyPage() {
 
   if (loading)
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          Loading food safety data…
+      <div className="min-h-screen bg-[#f5f7fb] px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-screen-xl space-y-4">
+          <div className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-xl border border-slate-200 bg-white" />)}
+          </div>
+          <div className="h-96 animate-pulse rounded-xl border border-slate-200 bg-white" />
         </div>
       </div>
     );
 
-  if (error) return <div className="flex items-center justify-center h-64 text-red-500 text-sm">{error}</div>;
+  if (error) return (
+    <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center px-6 text-center">
+      <p className="text-sm font-semibold text-red-800">Food Safety data unavailable</p>
+      <p className="mt-1 text-xs text-slate-500">{error}</p>
+      <button onClick={() => void loadData(true)} className="mt-4 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">Retry</button>
+    </div>
+  );
 
   const resolvedPct =
     kpis.totalComplaints > 0 ? ((kpis.resolved / kpis.totalComplaints) * 100).toFixed(0) : "0";
+  const syncAgeMinutes = syncMeta?.last_synced_at
+    ? Math.max(0, Math.round((clock - new Date(syncMeta.last_synced_at).getTime()) / 60000))
+    : null;
+  const syncHealthy = syncAgeMinutes != null && syncAgeMinutes <= 15;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#f5f7fb]">
       {/* Reporting period — sticky, drives every KPI, chart, and table row below */}
       <DateRangeBar
         dateFrom={dateFrom}
@@ -884,20 +971,34 @@ export default function FoodSafetyPage() {
         onToggleArrivedWarm={() => filters.setIncludeArrivedWarm(!filters.includeArrivedWarm)}
       />
 
-      <div className="px-6 py-6 max-w-screen-xl mx-auto space-y-6">
+      <div className="mx-auto max-w-screen-xl space-y-5 px-4 py-5 sm:px-6 sm:py-7">
         {/* Page header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Food Safety Complaints</h1>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Food Safety Complaints</h1>
+            <p className="mt-1 text-sm text-slate-500">
               {tickets.length} of {allTickets.length} records in selected period
               {lastUpdated &&
                 ` · most recent complaint ${lastUpdated.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
             </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
-            Live
+          <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+            <div className="text-right text-[11px] text-slate-500">
+              <p className={`font-semibold ${syncHealthy ? "text-emerald-700" : "text-amber-700"}`}>
+                {syncMeta?.last_synced_at ? `${syncHealthy ? "Synced" : "Sync delayed"} ${new Date(syncMeta.last_synced_at).toLocaleString()}` : "Sync status unavailable"}
+              </p>
+              <p className="mt-0.5 text-slate-400">{syncAgeMinutes != null ? `${syncAgeMinutes} min ago` : "Awaiting sync status"}</p>
+            </div>
+            <button
+              onClick={() => void loadData(false)}
+              disabled={refreshing}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            >
+              <svg className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0011.9 1.1L20 14M4 10l2.6-2.1A7 7 0 0118.5 9" />
+              </svg>
+              {refreshing ? "Refreshing" : "Refresh"}
+            </button>
           </div>
         </div>
 

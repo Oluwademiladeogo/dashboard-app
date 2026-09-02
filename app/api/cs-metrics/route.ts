@@ -30,8 +30,12 @@ export async function GET(req: NextRequest) {
     query += " ORDER BY window_start DESC, generated_at DESC LIMIT 1";
     const [rows] = await pool.query(query, params);
     const row = (rows as Record<string, unknown>[])[0];
+    const metrics = row ? parseJson<Record<string, unknown> | null>(row.payload, null) : null;
+    const source = metrics && typeof metrics.source === "object" ? metrics.source : null;
     return NextResponse.json({
-      metrics: row ? parseJson<Record<string, unknown> | null>(row.payload, null) : null,
+      metrics,
+      source,
+      health: metrics ? (source && (source as Record<string, unknown>).dataset === "reporting/stats" ? "ok" : "legacy_snapshot") : "missing",
       generatedAt: row?.generated_at ?? null,
       windows,
     });

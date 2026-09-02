@@ -15,6 +15,7 @@ type Row = {
   ticket_id: string | number;
   ticket_created_at: Date | string | null;
   order_fulfilled_at: Date | string | null;
+  order_date_source: string | null;
   ticket_closed_at: Date | string | null;
   customer_name: string | null;
   customer_email: string | null;
@@ -141,6 +142,20 @@ export async function GET(request: NextRequest) {
   try {
     const columns = await getTableColumns("gorgias_tickets");
     const has = (name: string) => columns.has(name);
+    if (request.nextUrl.searchParams.get("meta") === "1") {
+      const [metaRows] = await pool.query(`
+        SELECT
+          COUNT(*) AS total_tickets,
+          ${has("is_food_safety") ? "SUM(CASE WHEN is_food_safety = 1 THEN 1 ELSE 0 END)" : "0"} AS food_safety_tickets,
+          MAX(synced_at) AS last_synced_at,
+          MAX(classified_at) AS last_classified_at,
+          MAX(ticket_created_at) AS latest_ticket_at
+        FROM gorgias_tickets
+      `);
+      return NextResponse.json((metaRows as Record<string, unknown>[])[0] ?? {}, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     const p = request.nextUrl.searchParams.get("includeArrivedWarm");
     const includeArrived = p === "1" || p === "true";
 
@@ -148,6 +163,7 @@ export async function GET(request: NextRequest) {
       "t.ticket_id",
       "t.ticket_created_at",
       has("order_fulfilled_at") ? "t.order_fulfilled_at" : "NULL AS order_fulfilled_at",
+      has("order_date_source") ? "t.order_date_source" : "NULL AS order_date_source",
       "t.ticket_closed_at",
       "t.customer_name",
       "t.customer_email",
@@ -286,6 +302,7 @@ export async function GET(request: NextRequest) {
         shopifyOrderNumber: r.order_number ?? extractedOrderNumber,
         dateOfComplaint: r.ticket_created_at,
         orderFulfilledAt: r.order_fulfilled_at,
+        orderFulfilledSource: r.order_date_source,
         customerName: r.customer_name ?? r.customer_email,
         skuInQuestion: skuCodes.length ? skuCodes.join(", ") : fallbackSku,
         reportedItemName: r.reported_item_name ?? null,
