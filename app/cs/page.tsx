@@ -20,6 +20,27 @@ interface AgentRow {
   schedule_source: string;
   tph: number | null;
 }
+// Business-hours SLA cell (segment × customer type). See cs-metrics-report
+// reporting.py _segment_cell / _segments.
+interface SegmentCell {
+  evaluated: number;
+  achieved: number;
+  breached: number;
+  pending: number;
+  achievement_rate: number | null;
+  tickets_created: number;
+  messages_sent: number;
+}
+interface Segment {
+  sla_policy_uuid: string;
+  channel_note: string;
+  subset_of: string | null;
+  by_customer_type: Record<string, SegmentCell>;
+  totals: SegmentCell & {
+    frt_reference_24_7_seconds: number | null;
+    frt_reference_24_7_display: string;
+  };
+}
 interface Metrics {
   window_start: string;
   window_end: string;
@@ -34,10 +55,15 @@ interface Metrics {
   };
   summary: {
     tickets_created: number;
+    tickets_created_filtered?: number;
+    tickets_created_unfiltered?: number;
     tickets_closed: number | null;
     messages_sent: number;
+    messages_sent_filtered?: number;
+    filtered_segments?: string[];
     frt_display: string;
     frt_seconds: number | null;
+    frt_reference_24_7_display?: string;
     resolution_display: string;
     resolution_seconds: number | null;
     csat_avg: number | null;
@@ -58,7 +84,8 @@ interface Metrics {
       pending: number;
     }>;
   };
-  channel_table: Record<string, Record<string, Cell>>;
+  segments?: Record<string, Segment>;
+  channel_table?: Record<string, Record<string, Cell>>;
   agents: Record<string, AgentRow>;
   top_drivers: Record<string, [string, number][]>;
   heatmap: Record<string, number>;
@@ -80,6 +107,12 @@ interface ReportFile {
   name: string;
   size: number;
   modified: string;
+}
+interface ReportGroup {
+  key: string;
+  label: string;
+  modified: string;
+  files: ReportFile[];
 }
 interface ExplorerResult {
   metrics: {
@@ -204,7 +237,7 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
     { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "provider total", tone: "text-slate-900" },
     { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: `${sla?.achieved ?? 0} / ${sla?.evaluated ?? 0} evaluated`, tone: "text-emerald-700" },
     { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "SLA breaches", tone: "text-rose-700" },
-    { label: "Median first response", value: metrics.summary.frt_display || "n/a", detail: "24/7 median", tone: "text-amber-700" },
+    { label: "Median first response", value: metrics.summary.frt_display || "n/a", detail: "24/7 reference — not business hrs", tone: "text-amber-700" },
     { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: `${metrics.summary.csat_count} responses`, tone: "text-sky-700" },
   ];
   return (
@@ -212,8 +245,14 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
       <div className="grid grid-cols-2 gap-px bg-slate-200 md:grid-cols-[1.25fr_repeat(5,minmax(0,1fr))]">
         <div className="col-span-2 bg-blue-50/70 px-5 py-5 md:col-span-1 md:px-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">Tickets created</p>
-          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">{metrics.summary.tickets_created.toLocaleString()}</p>
-          <p className="mt-2 text-xs text-slate-500">Volume in selected window</p>
+          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">
+            {(metrics.summary.tickets_created_filtered ?? metrics.summary.tickets_created).toLocaleString()}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            {metrics.summary.tickets_created_filtered != null
+              ? `CS filtered · ${(metrics.summary.tickets_created_unfiltered ?? metrics.summary.tickets_created).toLocaleString()} all (unfiltered)`
+              : "Volume in selected window"}
+          </p>
         </div>
         {items.map((item) => (
           <div key={item.label} className="bg-white px-5 py-5">
@@ -229,6 +268,18 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
 
 const TH = "px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider";
 const TD = "px-3 py-2 text-xs text-slate-800";
+
+function pct(rate: number | null | undefined) {
+  return rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a";
+}
+// Highlight poor achievement so a bad segment (e.g. Chat's 5-min target) reads
+// at a glance, matching the breach-focused report the team wants.
+function rateTone(rate: number | null | undefined) {
+  if (rate == null) return "text-slate-400";
+  if (rate >= 0.9) return "text-emerald-700";
+  if (rate >= 0.75) return "text-amber-700";
+  return "text-rose-700";
+}
 
 function fmtDate(d: string) {
   return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -260,6 +311,31 @@ export default function CsMetricsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportFile[]>([]);
   const [reportsOpen, setReportsOpen] = useState(false);
+
+  const reportGroups = useMemo<ReportGroup[]>(() => {
+    const groups = new Map<string, ReportGroup>();
+    for (const file of reports) {
+      const isWorkbook = file.name === "CS Metrics Report.xlsx";
+      const stem = file.name.replace(/\.(xlsx|pdf|md)$/i, "");
+      const key = isWorkbook ? "cumulative-workbook" : stem.toLowerCase();
+      const weekStart = stem.match(/^cs-metrics-week-(\d{4}-\d{2}-\d{2})$/i)?.[1];
+      const label = isWorkbook
+        ? "Cumulative workbook"
+        : weekStart ? `Week of ${fmtDate(weekStart)}` : stem;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.files.push(file);
+        if (file.modified > existing.modified) existing.modified = file.modified;
+      } else {
+        groups.set(key, { key, label, modified: file.modified, files: [file] });
+      }
+    }
+    const extOrder = (name: string) => ({ pdf: 0, xlsx: 1, md: 2 }[name.split(".").pop()?.toLowerCase() ?? ""] ?? 3);
+    return [...groups.values()]
+      .sort((a, b) => b.modified.localeCompare(a.modified))
+      .slice(0, 3)
+      .map((group) => ({ ...group, files: [...group.files].sort((a, b) => extOrder(a.name) - extOrder(b.name)) }));
+  }, [reports]);
 
   const requestKey = `${kind}|${weekStart ?? ""}`;
   const openDatePicker = (ref: React.RefObject<HTMLInputElement | null>) => {
@@ -355,24 +431,16 @@ export default function CsMetricsPage() {
     [windows],
   );
 
-  const channelRows = useMemo(() => {
-    if (!metrics) return [];
-    const table = metrics.channel_table;
-    const channels = [
-      ...CHANNEL_ORDER.filter((c) => table[c]),
-      ...Object.keys(table).filter((c) => !CHANNEL_ORDER.includes(c)),
+  // Ordered [name, Segment] list for the business-hours SLA tables. Falls back
+  // to an empty list for legacy snapshots that predate the segment rework.
+  const segmentList = useMemo<[string, Segment][]>(() => {
+    const segs = metrics?.segments;
+    if (!segs) return [];
+    const ordered = [
+      ...CHANNEL_ORDER.filter((c) => segs[c]),
+      ...Object.keys(segs).filter((c) => !CHANNEL_ORDER.includes(c)),
     ];
-    const rows: { channel: string; ctype: string; cell: Cell; first: boolean }[] = [];
-    for (const chan of channels) {
-      const ctypes = [
-        ...CTYPE_ORDER.filter((t) => table[chan][t]),
-        ...Object.keys(table[chan]).filter((t) => !CTYPE_ORDER.includes(t)),
-      ];
-      ctypes.forEach((ctype, i) =>
-        rows.push({ channel: i === 0 ? chan : "", ctype, cell: table[chan][ctype], first: i === 0 }),
-      );
-    }
-    return rows;
+    return ordered.map((name) => [name, segs[name]]);
   }, [metrics]);
 
   const heat = metrics?.heatmap ?? {};
@@ -520,55 +588,88 @@ export default function CsMetricsPage() {
               </Card>
             )}
 
-            {/* channel × customer type */}
-            <Card title="Channel × Customer Type">
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className={`${TH} text-left`}>Channel</th>
-                      <th className={`${TH} text-left`}>Customer Type</th>
-                      <th className={`${TH} text-right`}>Tickets Created</th>
-                      <th className={`${TH} text-right`}>Messages Sent</th>
-                      <th className={`${TH} text-right`}>First Response Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {channelRows.map((row, i) => (
-                      <tr key={i} className={`hover:bg-slate-50/60 ${row.first && i > 0 ? "border-t-2 border-slate-200" : ""}`}>
-                        <td className={`${TD} font-semibold text-slate-900`}>{row.channel}</td>
-                        <td className={`${TD} text-slate-600`}>{row.ctype}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{row.cell.tickets_created.toLocaleString()}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{row.cell.messages_sent.toLocaleString()}</td>
-                        <td className={`${TD} text-right tabular-nums`}>{row.cell.frt_display || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+            {/* first response — SLA by segment × customer type (business hours) */}
+            {segmentList.length > 0 && (
+              <Card title="First response — SLA (business hours, 8am–4pm ET)">
+                <p className="mb-4 text-xs text-slate-500">
+                  Achieved vs breached against each policy&rsquo;s target — the business-hours
+                  first-response signal. The 24/7 medians above are reference only.
+                </p>
+                <div className="space-y-6">
+                  {segmentList.map(([name, seg]) => {
+                    const t = seg.totals;
+                    return (
+                      <div key={name}>
+                        <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                          <h4 className="text-sm font-semibold text-slate-900">{name}</h4>
+                          {seg.subset_of && (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                              subset of {seg.subset_of} — do not add
+                            </span>
+                          )}
+                        </div>
+                        {seg.channel_note && (
+                          <p className="mb-2 text-[11px] text-slate-400">{seg.channel_note}</p>
+                        )}
+                        <div className="overflow-x-auto rounded-lg border border-slate-200">
+                          <table className="min-w-full">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className={`${TH} text-left`}>Customer Type</th>
+                                <th className={`${TH} text-right`}>Evaluated</th>
+                                <th className={`${TH} text-right`}>Achieved</th>
+                                <th className={`${TH} text-right`}>Breached</th>
+                                <th className={`${TH} text-right`}>Achievement %</th>
+                                <th className={`${TH} text-right`}>Tickets</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {CTYPE_ORDER.filter((c) => seg.by_customer_type[c]).map((ctype) => {
+                                const cell = seg.by_customer_type[ctype];
+                                return (
+                                  <tr key={ctype} className="hover:bg-slate-50/60">
+                                    <td className={`${TD} text-slate-600`}>{ctype}</td>
+                                    <td className={`${TD} text-right tabular-nums`}>{cell.evaluated.toLocaleString()}</td>
+                                    <td className={`${TD} text-right tabular-nums`}>{cell.achieved.toLocaleString()}</td>
+                                    <td className={`${TD} text-right tabular-nums`}>{cell.breached.toLocaleString()}</td>
+                                    <td className={`${TD} text-right tabular-nums font-semibold ${rateTone(cell.achievement_rate)}`}>{pct(cell.achievement_rate)}</td>
+                                    <td className={`${TD} text-right tabular-nums text-slate-500`}>{cell.tickets_created.toLocaleString()}</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="border-t-2 border-slate-200 bg-slate-50/50 font-semibold">
+                                <td className={`${TD} text-slate-900`}>Total</td>
+                                <td className={`${TD} text-right tabular-nums`}>{t.evaluated.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{t.achieved.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{t.breached.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums ${rateTone(t.achievement_rate)}`}>{pct(t.achievement_rate)}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-500`}>{t.tickets_created.toLocaleString()}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        {t.frt_reference_24_7_display && (
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            24/7 median first response (reference): {t.frt_reference_24_7_display}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
 
             {/* team */}
-            <Card
-              title="Team"
-              headerRight={(
-                <span
-                  className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
-                  title="* = default Mon–Fri because no saved schedule entries exist for that agent in this window."
-                  aria-label="Default schedule note"
-                >
-                  ?
-                </span>
-              )}
-            >
+            <Card title="Team">
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className={`${TH} text-left`}>TM Name</th>
                       <th className={`${TH} text-right`}>TPH</th>
-                      <th className={`${TH} text-right`}>Total Tickets</th>
-                      <th className={`${TH} text-right`}>Tickets Touched</th>
+                      <th className={`${TH} text-right`}>Messages sent</th>
+                      <th className={`${TH} text-right`} title="Distinct tickets this agent sent at least one message on">Unique tickets handled</th>
                       <th className={`${TH} text-right`}>CSAT</th>
                       <th className={`${TH} text-right`}>Days Worked</th>
                     </tr>
@@ -597,7 +698,7 @@ export default function CsMetricsPage() {
             {/* top drivers */}
             <div className="grid md:grid-cols-3 gap-4">
               {DRIVER_ORDER.filter((t) => metrics.top_drivers[t]?.length).map((section) => (
-                <Card key={section} title={`${section} — Contact Reasons`}>
+                <Card key={section} title={section === "All customer types" ? "Contact Reasons" : `${section} — Contact Reasons`}>
                   <div className="divide-y divide-slate-100">
                     {metrics.top_drivers[section].slice(0, 6).map(([driver, count]) => (
                       <div key={driver} className="flex items-center justify-between py-1.5 text-xs">
@@ -667,20 +768,29 @@ export default function CsMetricsPage() {
               className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
             >
               {reportsOpen ? "Hide" : "Expand"}
-              <svg className={`h-3.5 w-3.5 transition-transform ${reportsOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01.02 1.06l-4.25 4.51a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+              <svg className={`h-3.5 w-3.5 transition-transform ${reportsOpen ? "rotate-180" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m3.25 5.75 4.75 4.5 4.75-4.5" />
               </svg>
             </button>
           )}
         >
-          {reportsOpen && (reports.length === 0 ? (
+          {reportsOpen && (reportGroups.length === 0 ? (
             <p className="text-xs text-slate-400">No generated files yet.</p>
           ) : (
             <div className="divide-y divide-slate-100">
-              {reports.map((f) => (
-                <div key={f.name} className="flex items-center justify-between py-1.5 text-xs">
-                  <a href={`/api/cs-reports?file=${encodeURIComponent(f.name)}`} className="text-blue-700 hover:underline">{f.name}</a>
-                  <span className="text-slate-400">{(f.size / 1024).toFixed(0)} KB — {new Date(f.modified).toLocaleDateString()}</span>
+              {reportGroups.map((group) => (
+                <div key={group.key} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-xs">
+                  <div>
+                    <p className="font-semibold text-slate-700">{group.label}</p>
+                    <p className="mt-0.5 text-slate-400">{new Date(group.modified).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {group.files.filter((f) => /\.(pdf|xlsx)$/i.test(f.name)).map((f) => (
+                      <a key={f.name} href={`/api/cs-reports?file=${encodeURIComponent(f.name)}`} className="rounded-md border border-slate-200 px-2 py-1 font-semibold text-blue-700 hover:border-blue-300 hover:bg-blue-50">
+                        {f.name.split(".").pop()?.toUpperCase()}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -706,6 +816,9 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
   const [newAgent, setNewAgent] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [expanded, setExpanded] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const agents = useMemo(() => {
     const seen = new Set<string>();
@@ -779,6 +892,30 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
     setNewAgent("");
   };
 
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    setUploadMsg(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/cs-schedule/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        setUploadMsg({ ok: false, text: data.error || "upload failed" });
+      } else {
+        const parts = [`${data.accepted} row${data.accepted === 1 ? "" : "s"} saved`];
+        if (data.rejected) parts.push(`${data.rejected} skipped`);
+        setUploadMsg({ ok: data.rejected === 0, text: parts.join(", ") });
+        load(); // refresh the visible grid
+      }
+    } catch {
+      setUploadMsg({ ok: false, text: "upload failed" });
+    } finally {
+      setUploading(false);
+      if (uploadRef.current) uploadRef.current.value = "";
+    }
+  };
+
   const headerRight = (
     <div className="flex items-center gap-2 text-xs">
       <button
@@ -817,8 +954,8 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
       className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
     >
       {expanded ? "Hide" : "Expand"}
-      <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+      <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m3.25 5.75 4.75 4.5 4.75-4.5" />
       </svg>
     </button>
   );
@@ -828,16 +965,7 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
       title="Team Schedule"
       sub="Optional schedule inputs for TPH"
       headerRight={expanded ? (
-        <div className="flex items-center gap-3">
-          <span
-            className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-300 text-[11px] font-semibold text-slate-500"
-            title="Click a day to cycle. P present · ½ half day · L leave · S sick · A absent · — off"
-            aria-label="Schedule status guide"
-          >
-            ?
-          </span>
-          {headerRight}
-        </div>
+        <div>{headerRight}</div>
       ) : expandButton}
     >
       {expanded && (
@@ -894,7 +1022,36 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
             >
               Add
             </button>
+            <div className="ml-auto flex items-center gap-2">
+              <input
+                ref={uploadRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUpload(file);
+                }}
+              />
+              <button
+                onClick={() => uploadRef.current?.click()}
+                disabled={uploading}
+                className="h-9 rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:opacity-40"
+                title="Bulk-upload a CSV: columns for agent email, date and status (e.g. present, leave, sick, half_day, off)"
+              >
+                {uploading ? "Uploading…" : "Upload CSV"}
+              </button>
+              {uploadMsg && (
+                <span className={`text-xs ${uploadMsg.ok ? "text-emerald-600" : "text-rose-600"}`}>
+                  {uploadMsg.text}
+                </span>
+              )}
+            </div>
           </div>
+          <p className="mt-2 text-[11px] text-slate-400">
+            CSV columns: agent email, date (YYYY-MM-DD or M/D/YYYY), status
+            (present / half_day / leave / sick / absent / off), optional name and note.
+          </p>
         </>
       )}
     </Card>
@@ -981,8 +1138,8 @@ function GenerateReport({ onGenerated }: { onGenerated: () => void }) {
           className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
         >
           {expanded ? "Hide" : "Expand"}
-          <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01.02 1.06l-4.25 4.51a.75.75 0 01-1.06-1.04L8.46 11.99 4.2 7.48a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          <svg className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m3.25 5.75 4.75 4.5 4.75-4.5" />
           </svg>
         </button>
       )}
