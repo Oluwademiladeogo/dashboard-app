@@ -648,11 +648,6 @@ export default function CsMetricsPage() {
                             </tbody>
                           </table>
                         </div>
-                        {t.frt_reference_24_7_display && (
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            24/7 median first response (reference): {t.frt_reference_24_7_display}
-                          </p>
-                        )}
                       </div>
                     );
                   })}
