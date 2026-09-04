@@ -387,24 +387,36 @@ export default function CsMetricsPage() {
     let cancelled = false;
     const params = new URLSearchParams({ kind });
     if (kind === "week" && weekStart) params.set("start", weekStart);
-    fetch(`/api/cs-metrics?${params}`)
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || "Metrics request failed");
-        return data;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setLoadError(null);
-        setResult({ key: requestKey, metrics: data.metrics, windows: data.windows ?? [] });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoadError("Could not load this snapshot. Try again shortly.");
-          setResult({ key: requestKey, metrics: null, windows: [] });
-        }
-      });
-    return () => { cancelled = true; };
+    const load = () => {
+      fetch(`/api/cs-metrics?${params}`)
+        .then(async (r) => {
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || "Metrics request failed");
+          return data;
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setLoadError(null);
+          setResult({ key: requestKey, metrics: data.metrics, windows: data.windows ?? [] });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Keep the last good data on a transient refresh failure; only show
+          // the error state if we never had data for this view.
+          setResult((prev) => (prev?.key === requestKey && prev.metrics
+            ? prev
+            : (setLoadError("Could not load this snapshot. Try again shortly."), { key: requestKey, metrics: null, windows: [] })));
+        });
+    };
+    load();
+    // Auto-refresh: re-read the latest snapshot every 5 min while the tab is
+    // visible, and immediately when the tab regains focus. Silent (same
+    // requestKey) so it never flashes a loading state.
+    const REFRESH_MS = 5 * 60 * 1000;
+    const iv = setInterval(() => { if (document.visibilityState === "visible") load(); }, REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
   }, [kind, weekStart, requestKey]);
 
   useEffect(() => {
