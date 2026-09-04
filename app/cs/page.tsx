@@ -288,6 +288,29 @@ const TD = "px-3 py-2 text-xs text-slate-800";
 function pct(rate: number | null | undefined) {
   return rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a";
 }
+// Mirrors cs_metrics.metrics.fmt_duration so chat's combined FRT reads the same
+// as the generated report.
+function fmtDur(secs: number | null | undefined) {
+  if (secs == null) return "—";
+  secs = Math.round(secs);
+  const d = Math.floor(secs / 86400); let r = secs % 86400;
+  const h = Math.floor(r / 3600); r %= 3600;
+  const m = Math.floor(r / 60); const s = r % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}min${m !== 1 ? "s" : ""}`;
+  if (m) return `${m}m ${s}sec${s !== 1 ? "s" : ""}`;
+  return `${s}secs`;
+}
+type FrtCell = NonNullable<Metrics["sla_frt"]>["table"][string][string];
+function chatFrt(cell: FrtCell | undefined) {
+  if (!cell) return "—";
+  const parts: [number, number][] = [];
+  if (cell.frt_breached_seconds != null && cell.breached_answered) parts.push([cell.frt_breached_seconds, cell.breached_answered]);
+  if (cell.frt_achieved_seconds != null && cell.achieved) parts.push([cell.frt_achieved_seconds, cell.achieved]);
+  if (!parts.length) return "—";
+  const n = parts.reduce((a, [, c]) => a + c, 0);
+  return fmtDur(parts.reduce((a, [s, c]) => a + s * c, 0) / n);
+}
 // Highlight poor achievement so a bad segment (e.g. Chat's 5-min target) reads
 // at a glance, matching the breach-focused report the team wants.
 function rateTone(rate: number | null | undefined) {
@@ -612,7 +635,10 @@ export default function CsMetricsPage() {
                   breached; breached FRT averages answered-but-late tickets only. Targets: 8h
                   (Email / Help&nbsp;Center), 5m (Chat).
                 </p>
-                <div className="overflow-x-auto rounded-lg border border-slate-200">
+
+                {/* Section 1 — Email & Help Center: breached / achieved with FRT */}
+                <h4 className="mb-2 text-sm font-semibold text-slate-900">Email &amp; Help Center</h4>
+                <div className="mb-6 overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
@@ -622,30 +648,74 @@ export default function CsMetricsPage() {
                         <th className={`${TH} text-right`}>FRT Breached</th>
                         <th className={`${TH} text-right`}>Achieved</th>
                         <th className={`${TH} text-right`}>FRT Achieved</th>
-                        <th className={`${TH} text-right`}>Tickets</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(() => {
-                        const CHAN_LABEL: Record<string, string> = { email: "Email", "help-center": "Help Center", chat: "Chat", sms: "SMS" };
-                        const order = ["email", "help-center", "chat", "sms"];
+                        const LABEL: Record<string, string> = { email: "Email", "help-center": "Help Center" };
                         const table = metrics.sla_frt!.table;
-                        const chans = [...order.filter((c) => table[c]), ...Object.keys(table).filter((c) => !order.includes(c))];
                         const out: ReactElement[] = [];
-                        for (const chan of chans) {
+                        for (const chan of ["email", "help-center"]) {
+                          if (!table[chan]) continue;
                           let first = true;
                           for (const ct of CTYPE_ORDER) {
                             const cell = table[chan]?.[ct];
                             if (!cell) continue;
                             out.push(
                               <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
-                                <td className={`${TD} font-semibold text-slate-900`}>{first ? (CHAN_LABEL[chan] ?? chan) : ""}</td>
+                                <td className={`${TD} font-semibold text-slate-900`}>{first ? LABEL[chan] : ""}</td>
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
                                 <td className={`${TD} text-right tabular-nums ${cell.breached ? "text-rose-700 font-semibold" : ""}`}>{cell.breached.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_breached_display || "—"}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{cell.achieved.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_achieved_display || "—"}</td>
-                                <td className={`${TD} text-right tabular-nums text-slate-400`}>{cell.tickets.toLocaleString()}</td>
+                              </tr>,
+                            );
+                            first = false;
+                          }
+                        }
+                        return out;
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Section 2 — Chat & SMS: tickets created / messages sent / FRT */}
+                <h4 className="mb-2 text-sm font-semibold text-slate-900">Chat &amp; SMS</h4>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className={`${TH} text-left`}>Channel</th>
+                        <th className={`${TH} text-left`}>Customer Type</th>
+                        <th className={`${TH} text-right`}>Tickets Created</th>
+                        <th className={`${TH} text-right`}>Messages Sent</th>
+                        <th className={`${TH} text-right`}>FRT</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const table = metrics.sla_frt!.table;
+                        const segs = metrics.segments ?? {};
+                        const out: ReactElement[] = [];
+                        for (const [segName, chanKey] of [["Chat", "chat"], ["SMS", null]] as [string, string | null][]) {
+                          const segCt = segs[segName]?.by_customer_type ?? {};
+                          const frtCt = chanKey ? (table[chanKey] ?? {}) : {};
+                          if (!Object.keys(segCt).length && !Object.keys(frtCt).length) continue;
+                          let first = true;
+                          for (const ct of CTYPE_ORDER) {
+                            const sc = segCt[ct];
+                            const fc = frtCt[ct];
+                            if (!sc && !fc) continue;
+                            const tickets = sc?.tickets_created ?? fc?.tickets ?? 0;
+                            const msgs = sc?.messages_sent ?? 0;
+                            out.push(
+                              <tr key={`${segName}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
+                                <td className={`${TD} font-semibold text-slate-900`}>{first ? segName : ""}</td>
+                                <td className={`${TD} text-slate-600`}>{ct}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{tickets.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{msgs.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{chanKey ? chatFrt(fc) : "—"}</td>
                               </tr>,
                             );
                             first = false;
