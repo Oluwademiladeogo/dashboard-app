@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 // ── payload types (mirror cs-metrics-report/cs_metrics/metrics.py) ───────────
 interface Cell {
@@ -86,6 +86,22 @@ interface Metrics {
   };
   segments?: Record<string, Segment>;
   channel_table?: Record<string, Record<string, Cell>>;
+  // Business-hours SLA & FRT (Jess's report), computed from warehouse timestamps.
+  sla_frt?: {
+    business_hours?: string;
+    unanswered_counts_as?: string;
+    table: Record<string, Record<string, {
+      breached: number;
+      breached_answered: number;
+      achieved: number;
+      pending: number;
+      tickets: number;
+      frt_breached_seconds: number | null;
+      frt_breached_display: string;
+      frt_achieved_seconds: number | null;
+      frt_achieved_display: string;
+    }>>;
+  };
   agents: Record<string, AgentRow>;
   top_drivers: Record<string, [string, number][]>;
   heatmap: Record<string, number>;
@@ -588,12 +604,67 @@ export default function CsMetricsPage() {
               </Card>
             )}
 
-            {/* first response — SLA by segment × customer type (business hours) */}
-            {segmentList.length > 0 && (
+            {/* SLA & First Response — business-hours FRT from warehouse timestamps (Jess's report) */}
+            {metrics.sla_frt?.table && (
+              <Card title="SLA & First Response (business hours, 8am–4pm ET)">
+                <p className="mb-4 text-xs text-slate-500">
+                  Business hours: Mon&ndash;Fri, 8am&ndash;4pm ET. Unanswered tickets count as
+                  breached; breached FRT averages answered-but-late tickets only. Targets: 8h
+                  (Email / Help&nbsp;Center), 5m (Chat).
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className={`${TH} text-left`}>Channel</th>
+                        <th className={`${TH} text-left`}>Customer Type</th>
+                        <th className={`${TH} text-right`}>Breached</th>
+                        <th className={`${TH} text-right`}>FRT Breached</th>
+                        <th className={`${TH} text-right`}>Achieved</th>
+                        <th className={`${TH} text-right`}>FRT Achieved</th>
+                        <th className={`${TH} text-right`}>Tickets</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const CHAN_LABEL: Record<string, string> = { email: "Email", "help-center": "Help Center", chat: "Chat", sms: "SMS" };
+                        const order = ["email", "help-center", "chat", "sms"];
+                        const table = metrics.sla_frt!.table;
+                        const chans = [...order.filter((c) => table[c]), ...Object.keys(table).filter((c) => !order.includes(c))];
+                        const out: ReactElement[] = [];
+                        for (const chan of chans) {
+                          let first = true;
+                          for (const ct of CTYPE_ORDER) {
+                            const cell = table[chan]?.[ct];
+                            if (!cell) continue;
+                            out.push(
+                              <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
+                                <td className={`${TD} font-semibold text-slate-900`}>{first ? (CHAN_LABEL[chan] ?? chan) : ""}</td>
+                                <td className={`${TD} text-slate-600`}>{ct}</td>
+                                <td className={`${TD} text-right tabular-nums ${cell.breached ? "text-rose-700 font-semibold" : ""}`}>{cell.breached.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_breached_display || "—"}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{cell.achieved.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_achieved_display || "—"}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-400`}>{cell.tickets.toLocaleString()}</td>
+                              </tr>,
+                            );
+                            first = false;
+                          }
+                        }
+                        return out;
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {/* fallback: legacy per-segment SLA (only for snapshots without sla_frt) */}
+            {!metrics.sla_frt?.table && segmentList.length > 0 && (
               <Card title="First response — SLA (business hours, 8am–4pm ET)">
                 <p className="mb-4 text-xs text-slate-500">
                   Achieved vs breached against each policy&rsquo;s target — the business-hours
-                  first-response signal. The 24/7 medians above are reference only.
+                  first-response signal.
                 </p>
                 <div className="space-y-6">
                   {segmentList.map(([name, seg]) => {
