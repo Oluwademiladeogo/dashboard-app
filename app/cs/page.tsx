@@ -96,6 +96,8 @@ interface Metrics {
       achieved: number;
       pending: number;
       tickets: number;
+      frt_answered_median_seconds?: number | null;
+      frt_answered_median_display?: string;
       frt_breached_seconds: number | null;
       frt_breached_display: string;
       frt_achieved_seconds: number | null;
@@ -288,7 +290,7 @@ const TD = "px-3 py-2 text-xs text-slate-800";
 function pct(rate: number | null | undefined) {
   return rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a";
 }
-// Mirrors cs_metrics.metrics.fmt_duration so chat's combined FRT reads the same
+// Mirrors cs_metrics.metrics.fmt_duration so Chat's median FRT reads the same
 // as the generated report.
 function fmtDur(secs: number | null | undefined) {
   if (secs == null) return "—";
@@ -303,13 +305,7 @@ function fmtDur(secs: number | null | undefined) {
 }
 type FrtCell = NonNullable<Metrics["sla_frt"]>["table"][string][string];
 function chatFrt(cell: FrtCell | undefined) {
-  if (!cell) return "—";
-  const parts: [number, number][] = [];
-  if (cell.frt_breached_seconds != null && cell.breached_answered) parts.push([cell.frt_breached_seconds, cell.breached_answered]);
-  if (cell.frt_achieved_seconds != null && cell.achieved) parts.push([cell.frt_achieved_seconds, cell.achieved]);
-  if (!parts.length) return "—";
-  const n = parts.reduce((a, [, c]) => a + c, 0);
-  return fmtDur(parts.reduce((a, [s, c]) => a + s * c, 0) / n);
+  return fmtDur(cell?.frt_answered_median_seconds);
 }
 // Highlight poor achievement so a bad segment (e.g. Chat's 5-min target) reads
 // at a glance, matching the breach-focused report the team wants.
@@ -644,8 +640,9 @@ export default function CsMetricsPage() {
               <Card title="SLA & First Response (business hours, 8am–4pm ET)">
                 <p className="mb-4 text-xs text-slate-500">
                   Business hours: Mon&ndash;Fri, 8am&ndash;4pm ET. Unanswered tickets count as
-                  breached; breached FRT averages answered-but-late tickets only. Targets: 8h
-                  (Email / Help&nbsp;Center), 5m (Chat).
+                  breached; breached FRT averages answered-but-late tickets only. Chat FRT is
+                  the median across answered tickets. Targets: 8h (Email / Help&nbsp;Center),
+                  5m (Chat).
                 </p>
 
                 {/* Section 1 — Email & Help Center: breached / achieved with FRT */}
