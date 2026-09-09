@@ -636,9 +636,11 @@ export default function CsMetricsPage() {
             {metrics.sla_frt?.table && (
               <Card title="SLA & First Response">
                 <p className="mb-4 text-xs text-slate-500">
-                  Unanswered tickets count as breached; breached FRT averages
-                  answered-but-late tickets only. Chat FRT is the median across
-                  answered tickets. Targets: 8h (Email / Help&nbsp;Center), 5m (Chat).
+                  Breached / Achieved counts come from Gorgias&rsquo;s business-hours
+                  SLA (what Jess sees); FRT Breached averages answered-but-late tickets
+                  only, and Chat FRT is the median across answered tickets — both
+                  computed from warehouse timestamps. Targets: 8h (Email / Help&nbsp;Center),
+                  5m (Chat).
                 </p>
 
                 {/* Section 1 — Email & Help Center: breached / achieved with FRT */}
@@ -659,16 +661,23 @@ export default function CsMetricsPage() {
                       {(() => {
                         const LABEL: Record<string, string> = { email: "Email", "help-center": "Help Center" };
                         const table = metrics.sla_frt!.table;
+                        // Breached/Achieved COUNTS come from Gorgias's ticket-sla
+                        // segments (business-hours-correct; unanswered-within-window
+                        // is pending, not breached). The FRT duration columns come
+                        // from the warehouse (Gorgias exposes no BH FRT). Segment
+                        // name == channel LABEL ("Email" / "Help Center").
+                        const segs = metrics.segments ?? {};
                         const out: ReactElement[] = [];
                         // Always render all three customer types for each channel
                         // (zeros where the window has none) so the Lead row can
                         // never silently disappear.
                         for (const chan of ["email", "help-center"]) {
+                          const segCt = segs[LABEL[chan]]?.by_customer_type ?? {};
                           let first = true;
                           for (const ct of CTYPE_ORDER) {
                             const cell = table[chan]?.[ct];
-                            const breached = cell?.breached ?? 0;
-                            const achieved = cell?.achieved ?? 0;
+                            const breached = segCt[ct]?.breached ?? 0;
+                            const achieved = segCt[ct]?.achieved ?? 0;
                             out.push(
                               <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
                                 <td className={`${TD} font-semibold text-slate-900`}>{first ? LABEL[chan] : ""}</td>
