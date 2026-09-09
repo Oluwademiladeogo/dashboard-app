@@ -1184,6 +1184,13 @@ function ScheduleEditor({ seedAgents }: { seedAgents: { email: string; name: str
                   if (file) handleUpload(file);
                 }}
               />
+              <a
+                href="/api/cs-schedule/template"
+                className="inline-flex h-9 items-center rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:border-slate-400"
+                title="Download a blank CSV template with the expected columns"
+              >
+                Template
+              </a>
               <button
                 onClick={() => uploadRef.current?.click()}
                 disabled={uploading}
