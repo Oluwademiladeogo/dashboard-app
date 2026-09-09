@@ -254,8 +254,8 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
   const rate = sla?.achievement_rate;
   const items = [
     { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "provider total", tone: "text-slate-900" },
-    { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: `${sla?.achieved ?? 0} / ${sla?.evaluated ?? 0} evaluated`, tone: "text-emerald-700" },
-    { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "SLA breaches", tone: "text-rose-700" },
+    { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: "", tone: "text-emerald-700" },
+    { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "", tone: "text-rose-700" },
     { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: `${metrics.summary.csat_count} responses`, tone: "text-sky-700" },
   ];
   return (
@@ -266,17 +266,12 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
           <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">
             {(metrics.summary.tickets_created_filtered ?? metrics.summary.tickets_created).toLocaleString()}
           </p>
-          <p className="mt-2 text-xs text-slate-500">
-            {metrics.summary.tickets_created_filtered != null
-              ? `CS filtered · ${(metrics.summary.tickets_created_unfiltered ?? metrics.summary.tickets_created).toLocaleString()} all (unfiltered)`
-              : "Volume in selected window"}
-          </p>
         </div>
         {items.map((item) => (
           <div key={item.label} className="bg-white px-5 py-5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
             <p className={`mt-3 text-xl font-semibold tracking-tight ${item.tone}`}>{item.value}</p>
-            <p className="mt-2 text-[11px] text-slate-500">{item.detail}</p>
+            {item.detail && <p className="mt-2 text-[11px] text-slate-500">{item.detail}</p>}
           </div>
         ))}
       </div>
