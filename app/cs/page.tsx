@@ -90,6 +90,7 @@ interface Metrics {
   sla_frt?: {
     business_hours?: string;
     unanswered_counts_as?: string;
+    daily?: Record<string, { frt_median_seconds: number | null; frt_median_display?: string; answered: number }>;
     table: Record<string, Record<string, {
       breached: number;
       breached_answered: number;
@@ -615,6 +616,7 @@ export default function CsMetricsPage() {
                         <th className={`${TH} text-right`}>Breached</th>
                         <th className={`${TH} text-right`}>Pending</th>
                         <th className={`${TH} text-right`}>Achievement Rate</th>
+                        <th className={`${TH} text-right`}>FRT (median)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -626,6 +628,7 @@ export default function CsMetricsPage() {
                           <td className={`${TD} text-right tabular-nums text-red-700`}>{row.breached.toLocaleString()}</td>
                           <td className={`${TD} text-right tabular-nums`}>{row.pending.toLocaleString()}</td>
                           <td className={`${TD} text-right tabular-nums`}>{row.evaluated ? `${((row.achieved / row.evaluated) * 100).toFixed(1)}%` : "—"}</td>
+                          <td className={`${TD} text-right tabular-nums text-slate-600`}>{metrics.sla_frt?.daily?.[date]?.frt_median_display || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
