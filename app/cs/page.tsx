@@ -255,12 +255,11 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
     { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "provider total", tone: "text-slate-900" },
     { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: `${sla?.achieved ?? 0} / ${sla?.evaluated ?? 0} evaluated`, tone: "text-emerald-700" },
     { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "SLA breaches", tone: "text-rose-700" },
-    { label: "Median first response", value: metrics.summary.frt_display || "n/a", detail: "24/7 reference — not business hrs", tone: "text-amber-700" },
     { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: `${metrics.summary.csat_count} responses`, tone: "text-sky-700" },
   ];
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label="CS performance summary">
-      <div className="grid grid-cols-2 gap-px bg-slate-200 md:grid-cols-[1.25fr_repeat(5,minmax(0,1fr))]">
+      <div className="grid grid-cols-2 gap-px bg-slate-200 md:grid-cols-[1.25fr_repeat(4,minmax(0,1fr))]">
         <div className="col-span-2 bg-blue-50/70 px-5 py-5 md:col-span-1 md:px-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">Tickets created</p>
           <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">
@@ -637,12 +636,11 @@ export default function CsMetricsPage() {
 
             {/* SLA & First Response — business-hours FRT from warehouse timestamps (Jess's report) */}
             {metrics.sla_frt?.table && (
-              <Card title="SLA & First Response (business hours, 8am–4pm ET)">
+              <Card title="SLA & First Response">
                 <p className="mb-4 text-xs text-slate-500">
-                  Business hours: Mon&ndash;Fri, 8am&ndash;4pm ET. Unanswered tickets count as
-                  breached; breached FRT averages answered-but-late tickets only. Chat FRT is
-                  the median across answered tickets. Targets: 8h (Email / Help&nbsp;Center),
-                  5m (Chat).
+                  Unanswered tickets count as breached; breached FRT averages
+                  answered-but-late tickets only. Chat FRT is the median across
+                  answered tickets. Targets: 8h (Email / Help&nbsp;Center), 5m (Chat).
                 </p>
 
                 {/* Section 1 — Email & Help Center: breached / achieved with FRT */}
@@ -664,20 +662,23 @@ export default function CsMetricsPage() {
                         const LABEL: Record<string, string> = { email: "Email", "help-center": "Help Center" };
                         const table = metrics.sla_frt!.table;
                         const out: ReactElement[] = [];
+                        // Always render all three customer types for each channel
+                        // (zeros where the window has none) so the Lead row can
+                        // never silently disappear.
                         for (const chan of ["email", "help-center"]) {
-                          if (!table[chan]) continue;
                           let first = true;
                           for (const ct of CTYPE_ORDER) {
                             const cell = table[chan]?.[ct];
-                            if (!cell) continue;
+                            const breached = cell?.breached ?? 0;
+                            const achieved = cell?.achieved ?? 0;
                             out.push(
                               <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
                                 <td className={`${TD} font-semibold text-slate-900`}>{first ? LABEL[chan] : ""}</td>
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
-                                <td className={`${TD} text-right tabular-nums ${cell.breached ? "text-rose-700 font-semibold" : ""}`}>{cell.breached.toLocaleString()}</td>
-                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_breached_display || "—"}</td>
-                                <td className={`${TD} text-right tabular-nums`}>{cell.achieved.toLocaleString()}</td>
-                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell.frt_achieved_display || "—"}</td>
+                                <td className={`${TD} text-right tabular-nums ${breached ? "text-rose-700 font-semibold" : ""}`}>{breached.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell?.frt_breached_display || "—"}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{achieved.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell?.frt_achieved_display || "—"}</td>
                               </tr>,
                             );
                             first = false;
@@ -707,20 +708,22 @@ export default function CsMetricsPage() {
                         const table = metrics.sla_frt!.table;
                         const segs = metrics.segments ?? {};
                         const out: ReactElement[] = [];
-                        for (const [segName, chanKey] of [["Chat", "chat"], ["SMS", null]] as [string, string | null][]) {
+                        const ROWS: [string, string, string | null][] = [
+                          ["Chat", "Chat", "chat"],
+                          ["SMS (from Email · klaviyo tag)", "SMS", null],
+                        ];
+                        for (const [segLabel, segName, chanKey] of ROWS) {
                           const segCt = segs[segName]?.by_customer_type ?? {};
                           const frtCt = chanKey ? (table[chanKey] ?? {}) : {};
-                          if (!Object.keys(segCt).length && !Object.keys(frtCt).length) continue;
                           let first = true;
                           for (const ct of CTYPE_ORDER) {
                             const sc = segCt[ct];
                             const fc = frtCt[ct];
-                            if (!sc && !fc) continue;
                             const tickets = sc?.tickets_created ?? fc?.tickets ?? 0;
                             const msgs = sc?.messages_sent ?? 0;
                             out.push(
                               <tr key={`${segName}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
-                                <td className={`${TD} font-semibold text-slate-900`}>{first ? segName : ""}</td>
+                                <td className={`${TD} font-semibold text-slate-900`}>{first ? segLabel : ""}</td>
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{tickets.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{msgs.toLocaleString()}</td>
@@ -740,9 +743,9 @@ export default function CsMetricsPage() {
 
             {/* fallback: legacy per-segment SLA (only for snapshots without sla_frt) */}
             {!metrics.sla_frt?.table && segmentList.length > 0 && (
-              <Card title="First response — SLA (business hours, 8am–4pm ET)">
+              <Card title="First response — SLA">
                 <p className="mb-4 text-xs text-slate-500">
-                  Achieved vs breached against each policy&rsquo;s target — the business-hours
+                  Achieved vs breached against each policy&rsquo;s target — the
                   first-response signal.
                 </p>
                 <div className="space-y-6">
