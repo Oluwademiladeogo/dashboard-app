@@ -660,6 +660,8 @@ export default function CsMetricsPage() {
                       <tr>
                         <th className={`${TH} text-left`}>Channel</th>
                         <th className={`${TH} text-left`}>Customer Type</th>
+                        <th className={`${TH} text-right`}>Tickets Created</th>
+                        <th className={`${TH} text-right`}>Messages Sent</th>
                         <th className={`${TH} text-right`}>Breached</th>
                         <th className={`${TH} text-right`}>FRT Breached</th>
                         <th className={`${TH} text-right`}>Achieved</th>
@@ -687,10 +689,14 @@ export default function CsMetricsPage() {
                             const cell = table[chan]?.[ct];
                             const breached = segCt[ct]?.breached ?? 0;
                             const achieved = segCt[ct]?.achieved ?? 0;
+                            const ticketsCreated = segCt[ct]?.tickets_created ?? cell?.tickets ?? 0;
+                            const messagesSent = segCt[ct]?.messages_sent ?? 0;
                             out.push(
                               <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
                                 <td className={`${TD} font-semibold text-slate-900`}>{first ? LABEL[chan] : ""}</td>
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{ticketsCreated.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums`}>{messagesSent.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums ${breached ? "text-rose-700 font-semibold" : ""}`}>{breached.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell?.frt_breached_display || "—"}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{achieved.toLocaleString()}</td>
