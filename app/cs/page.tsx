@@ -253,7 +253,7 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
   const sla = metrics.sla;
   const rate = sla?.achievement_rate;
   const items = [
-    { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "", tone: "text-slate-900" },
+    { label: "Messages sent", value: (metrics.summary.messages_sent_filtered ?? metrics.summary.messages_sent).toLocaleString(), detail: "", tone: "text-slate-900" },
     { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: "", tone: "text-emerald-700" },
     { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "", tone: "text-rose-700" },
     { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: "", tone: "text-sky-700" },
