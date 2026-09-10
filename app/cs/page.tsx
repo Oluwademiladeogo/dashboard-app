@@ -643,8 +643,17 @@ export default function CsMetricsPage() {
                   5m (Chat).
                 </p>
 
-                {/* Section 1 — Email & Help Center: breached / achieved with FRT */}
+                {/* Section 1 — Email & Help Center: breached / achieved with FRT.
+                    "Email" is the whole 8h email policy (email + help-center
+                    channels, incl. the SMS tag subset), matching Jess; Help Center
+                    is a subset row that overlaps Email — counts flow from
+                    segments["Email"]/["Help Center"] and FRT from the combined
+                    table["email"]/table["help-center"] buckets. */}
                 <h4 className="mb-2 text-sm font-semibold text-slate-900">Email &amp; Help Center</h4>
+                <p className="mb-2 text-xs text-slate-500">
+                  Email spans the whole 8h email policy (email + help&#8209;center, incl.
+                  SMS); Help&nbsp;Center is shown again as a subset — do not sum the two.
+                </p>
                 <div className="mb-6 overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full">
                     <thead className="bg-slate-50 border-b border-slate-200">
