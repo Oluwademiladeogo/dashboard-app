@@ -253,10 +253,10 @@ function MetricRail({ metrics }: { metrics: Metrics }) {
   const sla = metrics.sla;
   const rate = sla?.achievement_rate;
   const items = [
-    { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "provider total", tone: "text-slate-900" },
+    { label: "Messages sent", value: metrics.summary.messages_sent.toLocaleString(), detail: "", tone: "text-slate-900" },
     { label: "SLA achievement", value: rate != null ? `${(rate * 100).toFixed(1)}%` : "n/a", detail: "", tone: "text-emerald-700" },
     { label: "SLA breaches", value: (sla?.breached ?? 0).toLocaleString(), detail: "", tone: "text-rose-700" },
-    { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: `${metrics.summary.csat_count} responses`, tone: "text-sky-700" },
+    { label: "CSAT", value: metrics.summary.csat_avg != null ? metrics.summary.csat_avg.toFixed(2) : "n/a", detail: "", tone: "text-sky-700" },
   ];
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label="CS performance summary">
@@ -635,25 +635,7 @@ export default function CsMetricsPage() {
             {/* SLA & First Response — business-hours FRT from warehouse timestamps (Jess's report) */}
             {metrics.sla_frt?.table && (
               <Card title="SLA & First Response">
-                <p className="mb-4 text-xs text-slate-500">
-                  Breached / Achieved counts come from Gorgias&rsquo;s business-hours
-                  SLA (what Jess sees); FRT Breached averages answered-but-late tickets
-                  only, and Chat FRT is the median across answered tickets — both
-                  computed from warehouse timestamps. Targets: 8h (Email / Help&nbsp;Center),
-                  5m (Chat).
-                </p>
-
-                {/* Section 1 — Email & Help Center: breached / achieved with FRT.
-                    "Email" is the whole 8h email policy (email + help-center
-                    channels, incl. the SMS tag subset), matching Jess; Help Center
-                    is a subset row that overlaps Email — counts flow from
-                    segments["Email"]/["Help Center"] and FRT from the combined
-                    table["email"]/table["help-center"] buckets. */}
                 <h4 className="mb-2 text-sm font-semibold text-slate-900">Email &amp; Help Center</h4>
-                <p className="mb-2 text-xs text-slate-500">
-                  Email spans the whole 8h email policy (email + help&#8209;center, incl.
-                  SMS); Help&nbsp;Center is shown again as a subset — do not sum the two.
-                </p>
                 <div className="mb-6 overflow-x-auto rounded-lg border border-slate-200">
                   <table className="min-w-full">
                     <thead className="bg-slate-50 border-b border-slate-200">
