@@ -30,6 +30,8 @@ interface SegmentCell {
   achievement_rate: number | null;
   tickets_created: number;
   messages_sent: number;
+  frt_seconds?: number | null;
+  frt_display?: string;
 }
 interface Segment {
   sla_policy_uuid: string;
@@ -731,7 +733,7 @@ export default function CsMetricsPage() {
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{tickets.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{msgs.toLocaleString()}</td>
-                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{chanKey ? chatFrt(fc) : "—"}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{sc?.frt_display || (chanKey ? chatFrt(fc) : "—")}</td>
                               </tr>,
                             );
                             first = false;
