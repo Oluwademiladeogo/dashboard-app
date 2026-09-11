@@ -357,7 +357,7 @@ export default function SubChangesPage() {
                             )}
                           </div>
                           <div className="font-medium text-slate-900 mt-1 truncate max-w-[180px]">
-                            {item.customer_name || "Valued Customer"}
+                            {item.customer_name || item.customer_email.split("@")[0]}
                           </div>
                           <div className="font-mono text-[11px] text-slate-400 truncate max-w-[180px]">
                             {item.customer_email}
@@ -477,7 +477,7 @@ export default function SubChangesPage() {
                 <div>
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Customer</label>
                   <div className="text-sm font-semibold text-slate-900 mt-0.5">
-                    {selectedItem.customer_name || "Valued Customer"}
+                    {selectedItem.customer_name || selectedItem.customer_email.split("@")[0]}
                   </div>
                   <div className="text-xs font-mono text-slate-500">{selectedItem.customer_email}</div>
                 </div>
@@ -505,13 +505,6 @@ export default function SubChangesPage() {
                       {selectedItem.target_date ? formatDate(selectedItem.target_date) : "Next Cycle (+1)"}
                     </div>
                   </div>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 p-3 bg-slate-50/50">
-                  <label className="text-[10px] font-semibold uppercase text-slate-400">Safety Gates & Logic</label>
-                  <p className="mt-1 text-xs text-slate-600 leading-relaxed font-sans">
-                    {selectedItem.reason || "Verified: Single customer match, single active subscription, no in-flight orders, charge unmodified."}
-                  </p>
                 </div>
 
                 <div className="space-y-1.5 pt-2 font-mono text-xs text-slate-500">
