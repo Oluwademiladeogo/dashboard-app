@@ -265,15 +265,14 @@ export default function SubChangesPage() {
                   <th className="px-4 py-3.5">Inbound Customer Request</th>
                   <th className="px-4 py-3.5">Proposed Action</th>
                   <th className="px-4 py-3.5">Schedule Transition</th>
-                  <th className="px-4 py-3.5">Recharge Account</th>
-                  <th className="py-3.5 pl-4 pr-6 text-right">Detected</th>
+                  <th className="py-3.5 pl-4 pr-6">Recharge Account</th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100 bg-white">
                 {loading && !data ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-slate-400">
+                    <td colSpan={5} className="py-16 text-center text-slate-400">
                       <div className="inline-flex items-center gap-2 text-xs font-medium">
                         <svg className="h-4 w-4 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -284,7 +283,7 @@ export default function SubChangesPage() {
                   </tr>
                 ) : filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-slate-400">
+                    <td colSpan={5} className="py-16 text-center text-slate-400">
                       <div className="mx-auto max-w-sm">
                         <div className="text-2xl mb-1">🔍</div>
                         <div className="font-medium text-slate-700 text-xs">No candidate tickets found</div>
@@ -392,7 +391,7 @@ export default function SubChangesPage() {
                         </td>
 
                         {/* Recharge Account */}
-                        <td className="px-4 py-4 align-top whitespace-nowrap font-mono text-xs">
+                        <td className="py-4 pl-4 pr-6 align-top whitespace-nowrap font-mono text-xs">
                           {item.recharge_customer_url ? (
                             <a
                               href={item.recharge_customer_url}
@@ -410,18 +409,6 @@ export default function SubChangesPage() {
                             <div className="text-slate-700">Cust: {item.customer_id || "—"}</div>
                           )}
                           <div className="text-[11px] text-slate-400 mt-0.5">Sub: {item.subscription_id || "—"}</div>
-                        </td>
-
-                        {/* Timestamp */}
-                        <td className="py-4 pl-4 pr-6 text-right text-[11px] text-slate-400 align-top whitespace-nowrap font-mono">
-                          {item.created_at
-                            ? new Date(item.created_at).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "—"}
                         </td>
                       </tr>
                     );
