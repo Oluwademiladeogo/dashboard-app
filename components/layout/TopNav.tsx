@@ -30,6 +30,12 @@ export default function TopNav() {
       >
         CS Metrics
       </Link>
+      <Link
+        href="/sub-changes"
+        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
+      >
+        Sub Changes
+      </Link>
     </nav>
   );
 }
