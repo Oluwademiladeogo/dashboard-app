@@ -122,17 +122,7 @@ export default function SubChangesPage() {
       <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-md sticky top-0 z-30 px-6 py-4 lg:px-10">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between max-w-7xl mx-auto">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[11px] font-semibold tracking-wider uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
-                Live Shadow Mode
-              </span>
-              <span className="text-xs text-slate-400">· Staged for Review</span>
-            </div>
-            <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               Subscription Schedule Changes
             </h1>
             <p className="mt-0.5 text-xs text-slate-500">
@@ -167,7 +157,6 @@ export default function SubChangesPage() {
           <div className="relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Candidates</div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{data?.stats.total ?? 0}</div>
-            <div className="mt-1 text-[11px] font-medium text-slate-400">Staged shadow candidates</div>
           </div>
 
           <div className="relative overflow-hidden rounded-xl border border-indigo-100 bg-gradient-to-b from-indigo-50/50 to-white p-4 shadow-sm">
@@ -176,7 +165,6 @@ export default function SubChangesPage() {
               <span className="h-2 w-2 rounded-full bg-indigo-500"></span>
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-indigo-950">{data?.stats.skips ?? 0}</div>
-            <div className="mt-1 text-[11px] text-indigo-600/80 font-medium">+1 subscription cycle</div>
           </div>
 
           <div className="relative overflow-hidden rounded-xl border border-amber-100 bg-gradient-to-b from-amber-50/50 to-white p-4 shadow-sm">
@@ -185,7 +173,6 @@ export default function SubChangesPage() {
               <span className="h-2 w-2 rounded-full bg-amber-500"></span>
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-amber-950">{data?.stats.delays ?? 0}</div>
-            <div className="mt-1 text-[11px] text-amber-600/80 font-medium">Relative & specific dates</div>
           </div>
 
           <div className="relative overflow-hidden rounded-xl border border-purple-100 bg-gradient-to-b from-purple-50/50 to-white p-4 shadow-sm">
@@ -194,13 +181,11 @@ export default function SubChangesPage() {
               <span className="h-2 w-2 rounded-full bg-purple-500"></span>
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-purple-950">{data?.stats.multiSkips ?? 0}</div>
-            <div className="mt-1 text-[11px] text-purple-600/80 font-medium">2–3 cycles (≤90 days)</div>
           </div>
 
           <div className="relative overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Unique Customers</div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{data?.stats.uniqueCustomers ?? 0}</div>
-            <div className="mt-1 text-[11px] text-emerald-600 font-medium">100% Precision Guarded</div>
           </div>
         </div>
 
