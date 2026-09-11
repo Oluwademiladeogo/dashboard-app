@@ -12,30 +12,27 @@ export default function TopNav() {
         <span className="text-xs font-bold tracking-widest text-slate-400 uppercase">Elevate Foods</span>
       </Link>
       <div className="h-4 w-px bg-slate-200" />
-      <Link
-        href="/food-safety"
-        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
-      >
-        Food Safety
-      </Link>
-      <Link
-        href="/cost"
-        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
-      >
-        Cost of Issues
-      </Link>
-      <Link
-        href="/cs"
-        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
-      >
-        CS Metrics
-      </Link>
-      <Link
-        href="/sub-changes"
-        className="text-sm font-medium text-slate-600 hover:text-slate-900 h-12 flex items-center"
-      >
-        Sub Changes
-      </Link>
+      {[
+        { href: "/food-safety", label: "Food Safety" },
+        { href: "/cost", label: "Cost of Issues" },
+        { href: "/cs", label: "CS Metrics" },
+        { href: "/sub-changes", label: "Sub Changes" },
+      ].map((tab) => {
+        const isActive = pathname === tab.href || pathname?.startsWith(tab.href + "/");
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={`text-sm h-12 flex items-center border-b-2 px-1 transition-all ${
+              isActive
+                ? "border-indigo-600 text-indigo-600 font-semibold"
+                : "border-transparent text-slate-600 hover:text-slate-900 font-medium"
+            }`}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }
