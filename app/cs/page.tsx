@@ -327,12 +327,56 @@ function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+function getInitialPreferences(): {
+  kind: string;
+  weekStart: string | null;
+  customStart: string | null;
+  customEnd: string | null;
+} {
+  if (typeof window === "undefined") {
+    return { kind: "7d", weekStart: null, customStart: null, customEnd: null };
+  }
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const urlWindow = sp.get("window") || sp.get("kind");
+    const urlWeekStart = sp.get("weekStart") || (urlWindow === "week" ? sp.get("start") : null);
+    const urlCustomStart = urlWindow === "custom" ? sp.get("start") : null;
+    const urlCustomEnd = urlWindow === "custom" ? sp.get("end") : null;
+
+    if (urlWindow && ["7d", "14d", "week", "custom"].includes(urlWindow)) {
+      return {
+        kind: urlWindow,
+        weekStart: urlWeekStart,
+        customStart: urlCustomStart,
+        customEnd: urlCustomEnd,
+      };
+    }
+
+    const saved = localStorage.getItem("cs_metrics_prefs");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.kind && ["7d", "14d", "week", "custom"].includes(parsed.kind)) {
+        return {
+          kind: parsed.kind,
+          weekStart: parsed.weekStart ?? null,
+          customStart: parsed.customStart ?? null,
+          customEnd: parsed.customEnd ?? null,
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return { kind: "7d", weekStart: null, customStart: null, customEnd: null };
+}
+
 export default function CsMetricsPage() {
   const [today] = useState(() => isoDate(new Date()));
   const [kind, setKind] = useState("7d");
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [customStart, setCustomStart] = useState(() => isoDate(new Date(Date.now() - 6 * 86400000)));
   const [customEnd, setCustomEnd] = useState(() => isoDate(new Date()));
+  const [ready, setReady] = useState(false);
   const [customResult, setCustomResult] = useState<ExplorerResult | null>(null);
   const [customLoading, setCustomLoading] = useState(false);
   const customStartRef = useRef<HTMLInputElement>(null);
@@ -343,6 +387,42 @@ export default function CsMetricsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reports, setReports] = useState<ReportFile[]>([]);
   const [reportsOpen, setReportsOpen] = useState(false);
+
+  // Restore filter state from URL or localStorage on initial mount
+  useEffect(() => {
+    const init = getInitialPreferences();
+    if (init.kind && init.kind !== "7d") setKind(init.kind);
+    if (init.weekStart) setWeekStart(init.weekStart);
+    if (init.customStart) setCustomStart(init.customStart);
+    if (init.customEnd) setCustomEnd(init.customEnd);
+    setReady(true);
+  }, []);
+
+  // Persist filter state changes to URL and localStorage
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      localStorage.setItem("cs_metrics_prefs", JSON.stringify({
+        kind,
+        weekStart,
+        customStart,
+        customEnd,
+      }));
+
+      const sp = new URLSearchParams();
+      sp.set("window", kind);
+      if (kind === "week" && weekStart) {
+        sp.set("weekStart", weekStart);
+      } else if (kind === "custom") {
+        sp.set("start", customStart);
+        sp.set("end", customEnd);
+      }
+      const newUrl = `${window.location.pathname}?${sp.toString()}`;
+      window.history.replaceState(null, "", newUrl);
+    } catch {
+      // Ignore
+    }
+  }, [ready, kind, weekStart, customStart, customEnd]);
 
   const reportGroups = useMemo<ReportGroup[]>(() => {
     const groups = new Map<string, ReportGroup>();
@@ -376,7 +456,7 @@ export default function CsMetricsPage() {
     try { input?.showPicker?.(); } catch { /* some browsers require direct input activation */ }
   };
   useEffect(() => {
-    if (kind === "custom") return;
+    if (!ready || kind === "custom") return;
     let cancelled = false;
     const params = new URLSearchParams({ kind });
     if (kind === "week" && weekStart) params.set("start", weekStart);
@@ -410,10 +490,10 @@ export default function CsMetricsPage() {
     const onVisible = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { cancelled = true; clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
-  }, [kind, weekStart, requestKey]);
+  }, [ready, kind, weekStart, requestKey]);
 
   useEffect(() => {
-    if (kind !== "custom") return;
+    if (!ready || kind !== "custom") return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async (jobId: string) => {
@@ -456,7 +536,7 @@ export default function CsMetricsPage() {
     };
     void start();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [kind, customStart, customEnd]);
+  }, [ready, kind, customStart, customEnd]);
 
   const loading = kind === "custom" ? customLoading : result?.key !== requestKey;
   const metrics = kind === "custom" || loading ? null : result?.metrics ?? null;
