@@ -691,7 +691,6 @@ export default function CsMetricsPage() {
                         <th className={`${TH} text-right`}>Evaluated</th>
                         <th className={`${TH} text-right`}>Achieved</th>
                         <th className={`${TH} text-right`}>Breached</th>
-                        <th className={`${TH} text-right`}>Pending</th>
                         <th className={`${TH} text-right`}>Achievement Rate</th>
                         <th className={`${TH} text-right`}>FRT (median)</th>
                       </tr>
@@ -703,7 +702,6 @@ export default function CsMetricsPage() {
                           <td className={`${TD} text-right tabular-nums`}>{row.evaluated.toLocaleString()}</td>
                           <td className={`${TD} text-right tabular-nums text-emerald-700`}>{row.achieved.toLocaleString()}</td>
                           <td className={`${TD} text-right tabular-nums text-red-700`}>{row.breached.toLocaleString()}</td>
-                          <td className={`${TD} text-right tabular-nums`}>{row.pending.toLocaleString()}</td>
                           <td className={`${TD} text-right tabular-nums`}>{row.evaluated ? `${((row.achieved / row.evaluated) * 100).toFixed(1)}%` : "—"}</td>
                           <td className={`${TD} text-right tabular-nums text-slate-600`}>{metrics.sla_frt?.daily?.[date]?.frt_median_display || "—"}</td>
                         </tr>
@@ -726,6 +724,7 @@ export default function CsMetricsPage() {
                         <th className={`${TH} text-left`}>Customer Type</th>
                         <th className={`${TH} text-right`}>Tickets Created</th>
                         <th className={`${TH} text-right`}>Messages Sent</th>
+                        <th className={`${TH} text-right`}>FRT</th>
                         <th className={`${TH} text-right`}>Breached</th>
                         <th className={`${TH} text-right`}>FRT Breached</th>
                         <th className={`${TH} text-right`}>Achieved</th>
@@ -755,12 +754,14 @@ export default function CsMetricsPage() {
                             const achieved = segCt[ct]?.achieved ?? 0;
                             const ticketsCreated = segCt[ct]?.tickets_created ?? cell?.tickets ?? 0;
                             const messagesSent = segCt[ct]?.messages_sent ?? 0;
+                            const frtDisplay = segCt[ct]?.frt_display || "—";
                             out.push(
                               <tr key={`${chan}-${ct}`} className={`hover:bg-slate-50/60 ${first ? "border-t-2 border-slate-200" : ""}`}>
                                 <td className={`${TD} font-semibold text-slate-900`}>{first ? LABEL[chan] : ""}</td>
                                 <td className={`${TD} text-slate-600`}>{ct}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{ticketsCreated.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{messagesSent.toLocaleString()}</td>
+                                <td className={`${TD} text-right tabular-nums text-slate-600`}>{frtDisplay}</td>
                                 <td className={`${TD} text-right tabular-nums ${breached ? "text-rose-700 font-semibold" : ""}`}>{breached.toLocaleString()}</td>
                                 <td className={`${TD} text-right tabular-nums text-slate-600`}>{cell?.frt_breached_display || "—"}</td>
                                 <td className={`${TD} text-right tabular-nums`}>{achieved.toLocaleString()}</td>
