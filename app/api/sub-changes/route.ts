@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
          created_at,
          updated_at
        FROM subscription_change_preview
+       WHERE decision <> 'WOULD_ACT'
        ORDER BY created_at DESC
        LIMIT 250`
     );
@@ -95,12 +96,17 @@ export async function GET(req: NextRequest) {
       (r) => r.decision === "AWAITING_CHOICE"
     ).length;
 
+    const shadowTests = items.filter(
+      (r) => String(r.decision || "").startsWith("SHADOW_")
+    ).length;
+
     const stats = {
       total: items.length,
       totalDelaysAutomated,
       delays1w,
       delays2w,
       activeInquiries,
+      shadowTests,
       uniqueCustomers: new Set(items.map((r) => r.customer_email)).size,
     };
 

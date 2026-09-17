@@ -24,6 +24,9 @@ interface SubChangeItem {
   created_at: string;
 }
 
+const LOCAL_EXECUTOR_URL = "http://localhost:3000/subscription-change/execute";
+const PRODUCTION_EXECUTOR_URL = "https://appyhourbox-app-cluxg.ondigitalocean.app/api/subscription-change/execute";
+
 interface GorgiasMessage {
   message_id: string;
   ticket_id: string;
@@ -42,6 +45,7 @@ interface ApiResponse {
     delays1w: number;
     delays2w: number;
     activeInquiries: number;
+    shadowTests: number;
     uniqueCustomers: number;
   };
   items: SubChangeItem[];
@@ -52,11 +56,22 @@ export default function SubChangesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [filterMode, setFilterMode] = useState<"all" | "1w" | "2w" | "active" | "applied">("all");
+  const [filterMode, setFilterMode] = useState<"all" | "1w" | "2w" | "active" | "applied" | "shadow">("all");
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [selectedItem, setSelectedItem] = useState<SubChangeItem | null>(null);
   const [drawerMessages, setDrawerMessages] = useState<GorgiasMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text: string) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -143,6 +158,81 @@ export default function SubChangesPage() {
     return "Delay";
   };
 
+  const buildExecutorPayload = (item: SubChangeItem) => ({
+    source: "sms-delay-flow",
+    request_id: `sms-delay-${item.ticket_id}-${item.target_date}`,
+    ticket_id: item.ticket_id,
+    customer_email: item.customer_email,
+    customer_id: item.customer_id,
+    subscription_id: item.subscription_id,
+    charge_id: item.charge_id,
+    charge_date: item.current_charge_date?.slice(0, 10) || null,
+    action: "delay",
+    delay_target: item.target_date,
+  });
+
+  const buildRunCommand = (item: SubChangeItem, url: string) =>
+    `curl -X POST ${url} \\\n` +
+    `  -H "Content-Type: application/json" \\\n` +
+    `  -H "x-api-key: <API_KEY>" \\\n` +
+    `  --data '${JSON.stringify(buildExecutorPayload(item))}'`;
+
+  // Short human phrase for how far the charge moves, e.g. "1 week".
+  const deltaPhrase = (item: SubChangeItem): string => {
+    const days = getDelayDays(item);
+    if (days !== null) {
+      if (days >= 6 && days <= 8) return "1 week";
+      if (days >= 13 && days <= 15) return "2 weeks";
+      return `${days} days`;
+    }
+    if (item.action === "skip") return "1 cycle";
+    return "";
+  };
+
+  // One consolidated status per row: what will happen + which state it's in.
+  const getStatus = (
+    item: SubChangeItem
+  ): { label: string; style: string; dot: string; pulse: boolean } => {
+    const d = deltaPhrase(item);
+    switch (item.decision) {
+      case "APPLIED":
+        return {
+          label: d ? `Delayed ${d}` : "Applied",
+          style: "bg-emerald-50 text-emerald-700 border-emerald-200",
+          dot: "bg-emerald-500",
+          pulse: true,
+        };
+      case "AWAITING_CHOICE":
+        return {
+          label: "Awaiting choice",
+          style: "bg-purple-50 text-purple-700 border-purple-200",
+          dot: "bg-purple-500",
+          pulse: true,
+        };
+      case "SHADOW_AWAITING_CHOICE":
+        return {
+          label: "Shadow · menu sent",
+          style: "bg-sky-50 text-sky-700 border-sky-200",
+          dot: "bg-sky-500",
+          pulse: false,
+        };
+      case "SHADOW_WOULD_APPLY":
+        return {
+          label: d ? `Shadow · would delay ${d}` : "Shadow · would apply",
+          style: "bg-sky-50 text-sky-700 border-sky-200",
+          dot: "bg-sky-500",
+          pulse: false,
+        };
+      default:
+        return {
+          label: item.decision,
+          style: "bg-slate-100 text-slate-600 border-slate-200",
+          dot: "bg-slate-400",
+          pulse: false,
+        };
+    }
+  };
+
   const getTriggerType = (item: SubChangeItem): { label: string; style: string } => {
     const text = (item.customer_text || "").trim().toLowerCase();
     if (text === "modify" || text.startsWith("modify") || text.includes("reschedule")) {
@@ -170,6 +260,8 @@ export default function SubChangesPage() {
         if (item.decision !== "AWAITING_CHOICE") return false;
       } else if (filterMode === "applied") {
         if (item.decision !== "APPLIED") return false;
+      } else if (filterMode === "shadow") {
+        if (!item.decision.startsWith("SHADOW_")) return false;
       }
 
       if (!search.trim()) return true;
@@ -320,6 +412,14 @@ export default function SubChangesPage() {
             >
               Active Inquiries ({data?.stats.activeInquiries ?? 0})
             </button>
+            <button
+              onClick={() => setFilterMode("shadow")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                filterMode === "shadow" ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-sky-600"
+              }`}
+            >
+              Shadow Tests ({data?.stats.shadowTests ?? 0})
+            </button>
           </div>
 
           <div className="relative w-full sm:w-80">
@@ -359,7 +459,7 @@ export default function SubChangesPage() {
                 <tr>
                   <th className="py-3.5 pl-6 pr-4">Ticket & Customer</th>
                   <th className="px-4 py-3.5">Inbound Trigger Message</th>
-                  <th className="px-4 py-3.5">Action & Status</th>
+                  <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5">Schedule Transition</th>
                   <th className="py-3.5 pl-4 pr-6">Recharge Account</th>
                 </tr>
@@ -450,34 +550,17 @@ export default function SubChangesPage() {
                           </div>
                         </td>
 
-                        {/* Action & Status */}
+                        {/* Status (single consolidated label) */}
                         <td className="px-4 py-4 align-top whitespace-nowrap">
-                          <div className="flex flex-col gap-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 uppercase tracking-wider">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                                Delay
+                          {(() => {
+                            const st = getStatus(item);
+                            return (
+                              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${st.style}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${st.dot} ${st.pulse ? "animate-pulse" : ""}`} />
+                                {st.label}
                               </span>
-                            </div>
-
-                            <div>
-                              {item.decision === "APPLIED" ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  Applied
-                                </span>
-                              ) : item.decision === "AWAITING_CHOICE" ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-200">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
-                                  Awaiting Choice
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-600 border border-slate-200">
-                                  {item.decision}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Schedule Transition */}
@@ -541,21 +624,15 @@ export default function SubChangesPage() {
                   <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                     Ticket #{selectedItem.ticket_id}
                   </span>
-                  {selectedItem.decision === "APPLIED" ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Applied
-                    </span>
-                  ) : selectedItem.decision === "AWAITING_CHOICE" ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-medium text-purple-700 border border-purple-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
-                      Awaiting Choice
-                    </span>
-                  ) : (
-                    <span className="text-xs font-semibold uppercase text-slate-500">
-                      {selectedItem.decision}
-                    </span>
-                  )}
+                  {(() => {
+                    const st = getStatus(selectedItem);
+                    return (
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${st.style}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${st.dot} ${st.pulse ? "animate-pulse" : ""}`} />
+                        {st.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <button
                   onClick={() => setSelectedItem(null)}
@@ -655,7 +732,7 @@ export default function SubChangesPage() {
                         </div>
 
                         {/* If Applied: Step 2 Choice & Confirmation */}
-                        {selectedItem.decision === "APPLIED" && (
+                        {(selectedItem.decision === "APPLIED" || selectedItem.decision === "SHADOW_WOULD_APPLY") && (
                           <>
                             <div className="flex flex-col items-start">
                               <span className="text-[10px] font-semibold text-slate-400 mb-0.5">Customer (SMS)</span>
@@ -682,6 +759,31 @@ export default function SubChangesPage() {
                   <div>Subscription ID: <span className="font-semibold text-slate-800">{selectedItem.subscription_id || "—"}</span></div>
                   <div>Charge ID: <span className="font-semibold text-slate-800">{selectedItem.charge_id || "—"}</span></div>
                 </div>
+
+                {selectedItem.decision === "SHADOW_WOULD_APPLY" && selectedItem.target_date && (
+                  <details className="rounded-lg border border-sky-200 bg-sky-50/50 p-3 text-xs" open>
+                    <summary className="cursor-pointer font-semibold text-sky-900">Run this charge</summary>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[11px] text-slate-500">
+                        Copy and paste into a terminal to actually apply this delay. Replace{" "}
+                        <code className="text-slate-700">&lt;API_KEY&gt;</code> with the AdminApp key. This hits the local backend; swap in the production URL below once it&apos;s deployed.
+                      </p>
+                      <pre className="max-h-56 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+                        {buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL)}
+                      </pre>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL))}
+                        className="rounded-md border border-sky-300 bg-white px-3 py-1.5 font-medium text-sky-800 hover:bg-sky-100"
+                      >
+                        {copied ? "Copied ✓" : "Copy command"}
+                      </button>
+                      <div className="text-[11px] text-slate-400 break-all">
+                        Production URL: {PRODUCTION_EXECUTOR_URL}
+                      </div>
+                    </div>
+                  </details>
+                )}
               </div>
             </div>
 
