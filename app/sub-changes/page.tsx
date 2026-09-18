@@ -61,6 +61,9 @@ export default function SubChangesPage() {
   const [drawerMessages, setDrawerMessages] = useState<GorgiasMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const copyToClipboard = (text: string) => {
     try {
@@ -69,6 +72,32 @@ export default function SubChangesPage() {
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // ignore clipboard errors
+    }
+  };
+
+  const sendUpcomingChargeTest = async (item: SubChangeItem, email: string) => {
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch("/api/trigger-upcoming-charge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          customer_id: item.customer_id,
+          subscription_id: item.subscription_id,
+          charge_id: item.charge_id,
+          scheduled_at: item.current_charge_date,
+          customer_portal_link: item.recharge_customer_url,
+          ticket_id: item.ticket_id,
+        }),
+      });
+      const data = await res.json();
+      setSendResult({ ok: Boolean(data.success), msg: data.message || (data.success ? "Sent" : "Failed") });
+    } catch (err) {
+      setSendResult({ ok: false, msg: err instanceof Error ? err.message : "Request failed" });
+    } finally {
+      setSending(false);
     }
   };
 
@@ -100,6 +129,12 @@ export default function SubChangesPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  // Reset the test-SMS panel whenever a different row is opened
+  useEffect(() => {
+    setTestEmail(selectedItem?.customer_email || "");
+    setSendResult(null);
+  }, [selectedItem?.id]);
 
   // Fetch thread messages when a row is selected
   useEffect(() => {
@@ -685,6 +720,52 @@ export default function SubChangesPage() {
                     </button>
                   </div>
                 )}
+
+                {/* ENG-7 Upcoming-Charge Test SMS */}
+                <div className="rounded-lg border-2 border-violet-300 bg-violet-50 p-3.5 shadow-sm">
+                  <div className="flex items-center gap-1.5 text-sm font-bold text-violet-900">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 3v-3z" />
+                    </svg>
+                    Send upcoming-charge test SMS
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Fires the <code className="text-slate-700">ENG-7 Test Upcoming Charge</code> metric with this row&apos;s
+                    charge date &amp; portal link. Only test profiles can receive it.
+                  </p>
+                  <label className="mt-2.5 block text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                    Send to
+                  </label>
+                  <input
+                    type="email"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                    placeholder="demi@elevatefoods.co"
+                    className="mt-1 w-full rounded-md border border-violet-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-300"
+                  />
+                  <button
+                    type="button"
+                    disabled={sending || !testEmail.trim()}
+                    onClick={() => sendUpcomingChargeTest(selectedItem, testEmail.trim())}
+                    className={`mt-2 w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors ${
+                      sending || !testEmail.trim() ? "bg-violet-300 cursor-not-allowed" : "bg-violet-600 hover:bg-violet-700"
+                    }`}
+                  >
+                    {sending ? "Sending…" : "Fire test SMS"}
+                  </button>
+                  {sendResult && (
+                    <div
+                      className={`mt-2 rounded-md px-2.5 py-2 text-[11px] font-medium ${
+                        sendResult.ok
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                          : "bg-rose-50 text-rose-800 border border-rose-200"
+                      }`}
+                    >
+                      {sendResult.ok ? "✓ " : "✕ "}
+                      {sendResult.msg}
+                    </div>
+                  )}
+                </div>
 
                 {/* SMS Conversation Transcript */}
                 <div className="pt-2">
