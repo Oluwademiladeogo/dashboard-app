@@ -257,6 +257,13 @@ export default function SubChangesPage() {
           dot: "bg-sky-500",
           pulse: false,
         };
+      case "MANUAL_RUN_NEEDED":
+        return {
+          label: d ? `Run manually · delay ${d}` : "Run manually",
+          style: "bg-amber-50 text-amber-800 border-amber-200",
+          dot: "bg-amber-500",
+          pulse: true,
+        };
       default:
         return {
           label: item.decision,
@@ -686,8 +693,13 @@ export default function SubChangesPage() {
                 </div>
 
                 {/* Run this exact charge — prominent, right under the dates */}
-                {selectedItem.decision === "SHADOW_WOULD_APPLY" && selectedItem.target_date && (
+                {(selectedItem.decision === "SHADOW_WOULD_APPLY" || selectedItem.decision === "MANUAL_RUN_NEEDED") && selectedItem.target_date && (
                   <div className="rounded-lg border-2 border-sky-300 bg-sky-50 p-3.5 shadow-sm">
+                    {selectedItem.decision === "MANUAL_RUN_NEEDED" && (
+                      <p className="mb-2 rounded-md bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">
+                        Auto-run couldn&apos;t reach the backend. Run it here to move the charge.
+                      </p>
+                    )}
                     <div className="flex items-center gap-1.5 text-sm font-bold text-sky-900">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
