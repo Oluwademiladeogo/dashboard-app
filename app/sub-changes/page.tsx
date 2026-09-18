@@ -25,7 +25,6 @@ interface SubChangeItem {
 }
 
 const LOCAL_EXECUTOR_URL = "http://localhost:3000/subscription-change/execute";
-const PRODUCTION_EXECUTOR_URL = "https://appyhourbox-app-cluxg.ondigitalocean.app/api/subscription-change/execute";
 
 interface GorgiasMessage {
   message_id: string;
@@ -651,6 +650,42 @@ export default function SubChangesPage() {
                   </div>
                 </div>
 
+                {/* Run this exact charge — prominent, right under the dates */}
+                {selectedItem.decision === "SHADOW_WOULD_APPLY" && selectedItem.target_date && (
+                  <div className="rounded-lg border-2 border-sky-300 bg-sky-50 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 text-sm font-bold text-sky-900">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Run this exact charge
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Paste in a terminal to move this charge for real — swap <code className="text-slate-700">&lt;API_KEY&gt;</code> for the AdminApp key.
+                    </p>
+                    <pre className="mt-2 max-h-44 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
+                      {buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL)}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL))}
+                      className={`mt-2 w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors ${
+                        copied ? "bg-emerald-600" : "bg-sky-600 hover:bg-sky-700"
+                      }`}
+                    >
+                      {copied ? (
+                        <>✓ Copied to clipboard</>
+                      ) : (
+                        <>
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Click to copy command to clipboard
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 {/* SMS Conversation Transcript */}
                 <div className="pt-2">
                   <div className="flex items-center justify-between mb-2">
@@ -740,41 +775,6 @@ export default function SubChangesPage() {
                   <div>Charge ID: <span className="font-semibold text-slate-800">{selectedItem.charge_id || "—"}</span></div>
                 </div>
 
-                {selectedItem.decision === "SHADOW_WOULD_APPLY" && selectedItem.target_date && (
-                  <details className="rounded-lg border border-sky-200 bg-sky-50/50 p-3 text-xs" open>
-                    <summary className="cursor-pointer font-semibold text-sky-900">Run this charge</summary>
-                    <div className="mt-3 space-y-2">
-                      <p className="text-[11px] text-slate-500">
-                        Copy and paste into a terminal to actually apply this delay. Replace{" "}
-                        <code className="text-slate-700">&lt;API_KEY&gt;</code> with the AdminApp key. This hits the local backend; swap in the production URL below once it&apos;s deployed.
-                      </p>
-                      <pre className="max-h-64 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
-                        {buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL)}
-                      </pre>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL))}
-                        className={`w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors ${
-                          copied ? "bg-emerald-600" : "bg-sky-600 hover:bg-sky-700"
-                        }`}
-                      >
-                        {copied ? (
-                          <>✓ Copied to clipboard</>
-                        ) : (
-                          <>
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            Click to copy command to clipboard
-                          </>
-                        )}
-                      </button>
-                      <div className="text-[11px] text-slate-400 break-all">
-                        Production URL: {PRODUCTION_EXECUTOR_URL}
-                      </div>
-                    </div>
-                  </details>
-                )}
               </div>
             </div>
 
