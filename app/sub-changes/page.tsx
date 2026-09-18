@@ -175,7 +175,7 @@ export default function SubChangesPage() {
     `curl -X POST ${url} \\\n` +
     `  -H "Content-Type: application/json" \\\n` +
     `  -H "x-api-key: <API_KEY>" \\\n` +
-    `  --data '${JSON.stringify(buildExecutorPayload(item))}'`;
+    `  -d '${JSON.stringify(buildExecutorPayload(item), null, 2)}'`;
 
   // Short human phrase for how far the charge moves, e.g. "1 week".
   const deltaPhrase = (item: SubChangeItem): string => {
@@ -460,7 +460,6 @@ export default function SubChangesPage() {
                   <th className="py-3.5 pl-6 pr-4">Ticket & Customer</th>
                   <th className="px-4 py-3.5">Inbound Trigger Message</th>
                   <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Schedule Transition</th>
                   <th className="py-3.5 pl-4 pr-6">Recharge Account</th>
                 </tr>
               </thead>
@@ -468,7 +467,7 @@ export default function SubChangesPage() {
               <tbody className="divide-y divide-slate-100 bg-white">
                 {loading && !data ? (
                   <tr>
-                    <td colSpan={5} className="py-16 text-center text-slate-400">
+                    <td colSpan={4} className="py-16 text-center text-slate-400">
                       <div className="inline-flex items-center gap-2 text-xs font-medium">
                         <svg className="h-4 w-4 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -479,7 +478,7 @@ export default function SubChangesPage() {
                   </tr>
                 ) : filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-16 text-center text-slate-400">
+                    <td colSpan={4} className="py-16 text-center text-slate-400">
                       <div className="mx-auto max-w-sm">
                         <div className="text-2xl mb-1">🔍</div>
                         <div className="font-medium text-slate-700 text-xs">No candidate tickets found</div>
@@ -490,7 +489,6 @@ export default function SubChangesPage() {
                 ) : (
                   filteredItems.map((item) => {
                     const trigger = getTriggerType(item);
-                    const deltaLabel = computeDelta(item);
                     const isSelected = selectedItem?.id === item.id;
 
                     return (
@@ -561,24 +559,6 @@ export default function SubChangesPage() {
                               </span>
                             );
                           })()}
-                        </td>
-
-                        {/* Schedule Transition */}
-                        <td className="px-4 py-4 align-top whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-slate-400 line-through">
-                              {formatDate(item.current_charge_date)}
-                            </span>
-                            <span className="text-slate-400">➔</span>
-                            <span className="font-mono text-xs font-bold text-slate-900">
-                              {item.target_date ? formatDate(item.target_date) : "Next Cycle"}
-                            </span>
-                          </div>
-                          <div className="mt-1">
-                            <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 border border-slate-200/60">
-                              {deltaLabel}
-                            </span>
-                          </div>
                         </td>
 
                         {/* Recharge Account */}
@@ -683,8 +663,8 @@ export default function SubChangesPage() {
                   </div>
 
                   <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 max-h-80 overflow-y-auto font-sans text-xs">
-                    {drawerMessages.length > 0 ? (
-                      drawerMessages.map((m) => {
+                    {drawerMessages.filter((m) => (m.body_text || "").trim().length > 0).length > 0 ? (
+                      drawerMessages.filter((m) => (m.body_text || "").trim().length > 0).map((m) => {
                         const isAgent = Boolean(m.from_agent);
                         return (
                           <div
@@ -768,15 +748,26 @@ export default function SubChangesPage() {
                         Copy and paste into a terminal to actually apply this delay. Replace{" "}
                         <code className="text-slate-700">&lt;API_KEY&gt;</code> with the AdminApp key. This hits the local backend; swap in the production URL below once it&apos;s deployed.
                       </p>
-                      <pre className="max-h-56 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap">
+                      <pre className="max-h-64 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
                         {buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL)}
                       </pre>
                       <button
                         type="button"
                         onClick={() => copyToClipboard(buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL))}
-                        className="rounded-md border border-sky-300 bg-white px-3 py-1.5 font-medium text-sky-800 hover:bg-sky-100"
+                        className={`w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors ${
+                          copied ? "bg-emerald-600" : "bg-sky-600 hover:bg-sky-700"
+                        }`}
                       >
-                        {copied ? "Copied ✓" : "Copy command"}
+                        {copied ? (
+                          <>✓ Copied to clipboard</>
+                        ) : (
+                          <>
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Click to copy command to clipboard
+                          </>
+                        )}
                       </button>
                       <div className="text-[11px] text-slate-400 break-all">
                         Production URL: {PRODUCTION_EXECUTOR_URL}
