@@ -379,9 +379,6 @@ export default function SubChangesPage() {
                 Conversational SMS Delay Flow
               </h1>
             </div>
-            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
-              Deterministic 2-step SMS delay automation (MODIFY ➔ 1 / 2) with a real-time audit feed.
-            </p>
           </div>
 
           <div className="flex items-center gap-2.5">
