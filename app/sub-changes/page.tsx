@@ -24,8 +24,6 @@ interface SubChangeItem {
   created_at: string;
 }
 
-const LOCAL_EXECUTOR_URL = "http://localhost:3000/subscription-change/execute";
-
 interface GorgiasMessage {
   message_id: string;
   ticket_id: string;
@@ -60,7 +58,6 @@ export default function SubChangesPage() {
   const [selectedItem, setSelectedItem] = useState<SubChangeItem | null>(null);
   const [drawerMessages, setDrawerMessages] = useState<GorgiasMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -96,16 +93,6 @@ export default function SubChangesPage() {
       });
     } finally {
       setQuickTestSending(false);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    try {
-      navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore clipboard errors
     }
   };
 
@@ -226,25 +213,6 @@ export default function SubChangesPage() {
     return "Delay";
   };
 
-  const buildExecutorPayload = (item: SubChangeItem) => ({
-    source: "sms-delay-flow",
-    request_id: `sms-delay-${item.ticket_id}-${item.target_date}`,
-    ticket_id: item.ticket_id,
-    customer_email: item.customer_email,
-    customer_id: item.customer_id,
-    subscription_id: item.subscription_id,
-    charge_id: item.charge_id,
-    charge_date: item.current_charge_date?.slice(0, 10) || null,
-    action: "delay",
-    delay_target: item.target_date,
-  });
-
-  const buildRunCommand = (item: SubChangeItem, url: string) =>
-    `curl -X POST ${url} \\\n` +
-    `  -H "Content-Type: application/json" \\\n` +
-    `  -H "x-api-key: <API_KEY>" \\\n` +
-    `  -d '${JSON.stringify(buildExecutorPayload(item), null, 2)}'`;
-
   // Short human phrase for how far the charge moves, e.g. "1 week".
   const deltaPhrase = (item: SubChangeItem): string => {
     const days = getDelayDays(item);
@@ -277,6 +245,13 @@ export default function SubChangesPage() {
           dot: "bg-purple-500",
           pulse: true,
         };
+      case "BACKEND_PENDING":
+        return {
+          label: "Waiting for backend",
+          style: "bg-amber-50 text-amber-800 border-amber-200",
+          dot: "bg-amber-500",
+          pulse: true,
+        };
       case "SHADOW_AWAITING_CHOICE":
         return {
           label: "Shadow · menu sent",
@@ -291,9 +266,10 @@ export default function SubChangesPage() {
           dot: "bg-sky-500",
           pulse: false,
         };
+      case "MANUAL":
       case "MANUAL_RUN_NEEDED":
         return {
-          label: d ? `Run manually · delay ${d}` : "Run manually",
+          label: "Needs review",
           style: "bg-amber-50 text-amber-800 border-amber-200",
           dot: "bg-amber-500",
           pulse: true,
@@ -841,47 +817,6 @@ export default function SubChangesPage() {
                     </svg>
                   </span>
                 </div>
-
-                {/* Run this exact charge — prominent, right under the dates */}
-                {(selectedItem.decision === "SHADOW_WOULD_APPLY" || selectedItem.decision === "MANUAL_RUN_NEEDED") && selectedItem.target_date && (
-                  <div className="rounded-lg border-2 border-sky-300 bg-sky-50 p-3.5 shadow-sm">
-                    {selectedItem.decision === "MANUAL_RUN_NEEDED" && (
-                      <p className="mb-2 rounded-md bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">
-                        Auto-run couldn&apos;t reach the backend. Run it here to move the charge.
-                      </p>
-                    )}
-                    <div className="flex items-center gap-1.5 text-sm font-bold text-sky-900">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Run this exact charge
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Paste in a terminal to move this charge for real — swap <code className="text-slate-700">&lt;API_KEY&gt;</code> for the AdminApp key.
-                    </p>
-                    <pre className="mt-2 max-h-44 overflow-auto rounded-md border border-sky-100 bg-white p-3 text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
-                      {buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL)}
-                    </pre>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(buildRunCommand(selectedItem, LOCAL_EXECUTOR_URL))}
-                      className={`mt-2 w-full inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors ${
-                        copied ? "bg-emerald-600" : "bg-sky-600 hover:bg-sky-700"
-                      }`}
-                    >
-                      {copied ? (
-                        <>✓ Copied to clipboard</>
-                      ) : (
-                        <>
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                          Click to copy command to clipboard
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
 
                 {/* ENG-7 Upcoming-Charge Test SMS */}
                 <div className="rounded-lg border-2 border-violet-300 bg-violet-50 p-3.5 shadow-sm">
