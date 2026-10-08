@@ -651,6 +651,17 @@ export default function CsMetricsPage() {
                 >
                   Sep 2026
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLoading(true);
+                    setCustomStart("2026-09-24");
+                    setCustomEnd("2026-09-30");
+                  }}
+                  className="h-7 rounded-md bg-white px-2 text-[11px] font-medium text-slate-600 shadow-sm border border-slate-200 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                >
+                  Sep 24–30
+                </button>
               </div>
             )}
           </div>
