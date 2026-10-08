@@ -19,7 +19,7 @@ function getAllowlist(): string[] {
 
 function getEnvValue(key: string): string | null {
   if (process.env[key]) return process.env[key] as string;
-  const candidates = ["/opt/n8n/.env", "/Users/demilade/Downloads/AdminApp/backend/.env"];
+  const candidates = ["/opt/n8n/.env"];
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) {

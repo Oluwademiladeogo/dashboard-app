@@ -1,21 +1,28 @@
-# Elevate Foods dashboard
+# Elevate Foods Dashboard
 
-Next.js dashboard for internal customer-service, food-safety, and cost reporting.
-The app reads the managed MySQL reporting warehouse populated by the n8n workflows; it no longer reads CSV snapshots or a local SQLite database.
+Next.js dashboard for internal customer-service, food-safety, subscription-changes, and cost reporting.
+The app reads the managed DigitalOcean MySQL reporting warehouse (`gorgias_appyhourbox_db`).
 
-## Local development
+## Local Development
 
-From this submodule directory:
+1. Create a `.env` file in this directory (copy from `.env.example` and paste the shared credentials):
+
+```bash
+cp .env.example .env
+```
+
+2. Install dependencies and start the development server:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-The scripts load the **repo-root** `.env` file through `scripts/with-root-env.cjs`, so there is one local env source for the monorepo. Start from the root `.env.example` file.
+3. Open `http://localhost:3000` (default shared password gate is configured in `lib/auth.ts` or via `DASHBOARD_PASSWORD`).
 
-Required app env vars:
+### Environment Variables
 
+Required for all dashboard pages (MySQL):
 - `DB_HOST`
 - `DB_PORT`
 - `DB_USER`
@@ -24,23 +31,23 @@ Required app env vars:
 - `DB_SSL`
 - `DB_SSL_REJECT_UNAUTHORIZED`
 
-## Build
+Optional (used by `/sub-changes` "Trigger Upcoming Charge SMS" test button):
+- `RECHARGE_API_TOKEN`
+- `KLAVIYO_API_KEY`
+- `TEST_SMS_ALLOWLIST`
+
+## Production Build & Server Deployment
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-## Data flow
+On the production Droplet (`104.236.223.214`), the app lives at `/opt/Elevate-Foods/Automations/dashboard-app` and is managed by PM2 (`dashboard`):
 
-1. `Automations/n8n-reporting-sync` syncs Gorgias + Shopify data into MySQL.
-2. Dashboard API routes read the MySQL warehouse.
-3. Client pages consume `/api/*` endpoints.
-
-The dashboard-side resolution parser is centralized in `lib/resolution.ts`; classification is owned by the reporting-sync workflow rather than by a second dashboard backfill script.
-
-## Deployment
-
-The dashboard is deployed with the parent repo through the root `.github/workflows/deploy.yml` workflow. The dashboard submodule must be committed before the parent repo updates its submodule pointer.
-
-See the parent repo `DEPLOYMENT.md` for Droplet secrets, restart-command configuration, and the n8n release checklist.
+```bash
+cd /opt/Elevate-Foods/Automations/dashboard-app
+pnpm install --frozen-lockfile
+pnpm build
+pm2 restart dashboard
+```

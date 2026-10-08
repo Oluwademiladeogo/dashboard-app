@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import path from "path";
+import pool from "../../../lib/db";
 
 // Custom ranges use the same provider-owned Reporting Statistics collector as
 // cron snapshots. They run as a detached Droplet job because a full Gorgias
@@ -85,7 +86,49 @@ export async function GET(req: NextRequest) {
 
   const range = parseDateRange(req);
   if ("error" in range) return NextResponse.json({ error: range.error }, { status: 400 });
-  const jobId = `${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+
+  // 1. Check if snapshot already exists in MySQL cs_metrics_snapshots
+  try {
+    const [rows] = await pool.query(
+      `SELECT payload FROM cs_metrics_snapshots
+       WHERE window_start = ? AND window_end = ?
+       ORDER BY generated_at DESC LIMIT 1`,
+      [range.start, range.end],
+    );
+    const row = (rows as Array<{ payload: unknown }>)[0];
+    if (row?.payload) {
+      const payload = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
+      return NextResponse.json(responseFromMetrics(payload as Record<string, unknown>), { status: 200 });
+    }
+  } catch {
+    // MySQL query fallback
+  }
+
+  // 2. Check if a completed or in-flight job already exists in jobs/
+  const deterministicJobId = crypto.createHash("md5").update(`${range.start}_${range.end}`).digest("hex");
+  try {
+    const files = await fs.readdir(path.join(CS_DIR, "jobs"));
+    for (const file of files) {
+      if (!file.endsWith(".json") || file.endsWith(".metrics.json")) continue;
+      const filePath = path.join(CS_DIR, "jobs", file);
+      const content = JSON.parse(await fs.readFile(filePath, "utf8")) as Record<string, unknown>;
+      if (content.start === range.start && content.end === range.end) {
+        const existingJobId = file.replace(/\.json$/, "");
+        if (content.status === "done") {
+          const value = await status(existingJobId);
+          return NextResponse.json(value, { status: 200 });
+        }
+        if (content.status === "running") {
+          return NextResponse.json({ status: "running", jobId: existingJobId, start: range.start, end: range.end }, { status: 202 });
+        }
+      }
+    }
+  } catch {
+    // fs fallback
+  }
+
+  // 3. Neither cached nor in-flight: spawn run_ondemand with deterministicJobId
+  const jobId = deterministicJobId;
   const child = spawn("bash", [path.join(CS_DIR, "run_ondemand.sh"), jobId, range.start, range.end, "0"], {
     cwd: CS_DIR,
     detached: true,

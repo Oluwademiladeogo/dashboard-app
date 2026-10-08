@@ -153,6 +153,7 @@ const KINDS = [
   { key: "7d", label: "Last 7 Days" },
   { key: "14d", label: "Last 14 Days" },
   { key: "week", label: "Weekly (Thu–Wed)" },
+  { key: "month", label: "Sep 2026" },
   { key: "custom", label: "Custom" },
 ];
 const CHANNEL_ORDER = ["Email", "Chat", "Help Center", "SMS"];
@@ -343,7 +344,7 @@ function getInitialPreferences(): {
     const urlCustomStart = urlWindow === "custom" ? sp.get("start") : null;
     const urlCustomEnd = urlWindow === "custom" ? sp.get("end") : null;
 
-    if (urlWindow && ["7d", "14d", "week", "custom"].includes(urlWindow)) {
+    if (urlWindow && ["7d", "14d", "week", "month", "custom"].includes(urlWindow)) {
       return {
         kind: urlWindow,
         weekStart: urlWeekStart,
@@ -355,7 +356,7 @@ function getInitialPreferences(): {
     const saved = localStorage.getItem("cs_metrics_prefs");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed.kind && ["7d", "14d", "week", "custom"].includes(parsed.kind)) {
+      if (parsed.kind && ["7d", "14d", "week", "month", "custom"].includes(parsed.kind)) {
         return {
           kind: parsed.kind,
           weekStart: parsed.weekStart ?? null,
@@ -523,6 +524,14 @@ export default function CsMetricsPage() {
         const params = new URLSearchParams({ start: customStart, end: customEnd });
         const response = await fetch(`/api/cs-explorer?${params}`);
         const data = await response.json();
+        if (data.status === "done") {
+          if (!cancelled) {
+            setLoadError(null);
+            setCustomResult(data as ExplorerResult);
+            setCustomLoading(false);
+          }
+          return;
+        }
         if (!response.ok && response.status !== 202) throw new Error(data.error || "Custom range failed");
         if (data.status !== "running" || !data.jobId) throw new Error("Custom range did not start");
         await poll(data.jobId);
@@ -539,7 +548,7 @@ export default function CsMetricsPage() {
   }, [ready, kind, customStart, customEnd]);
 
   const loading = kind === "custom" ? customLoading : result?.key !== requestKey;
-  const metrics = kind === "custom" || loading ? null : result?.metrics ?? null;
+  const metrics = loading ? null : (kind === "custom" ? customResult?.providerMetrics ?? null : result?.metrics ?? null);
   const windows = useMemo(() => result?.windows ?? [], [result]);
 
   const loadReports = useCallback(() => {
@@ -631,6 +640,17 @@ export default function CsMetricsPage() {
                   onClick={() => openDatePicker(customEndRef)}
                   className="h-7 rounded-md px-2 text-xs text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLoading(true);
+                    setCustomStart("2026-09-01");
+                    setCustomEnd("2026-09-30");
+                  }}
+                  className="h-7 rounded-md bg-white px-2 text-[11px] font-medium text-slate-600 shadow-sm border border-slate-200 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                >
+                  Sep 2026
+                </button>
               </div>
             )}
           </div>
@@ -662,7 +682,7 @@ export default function CsMetricsPage() {
           </div>
         )}
 
-        {kind === "custom" && !customLoading && customResult && (
+        {kind === "custom" && !customLoading && customResult && !metrics && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatCard accent="blue" label="Tickets Created"
               value={customResult.metrics.ticketsCreated.toLocaleString()} />
